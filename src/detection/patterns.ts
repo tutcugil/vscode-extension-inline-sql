@@ -28,11 +28,27 @@ export const ALL_SQL_KEYWORDS = [
 ] as const;
 
 /**
- * Regex pattern to match a SQL statement keyword at the beginning of a string
- * (after optional whitespace/comments).
+ * Check if text starts with a SQL statement keyword (after optional whitespace/comments).
+ * Uses iterative stripping instead of nested regex quantifiers to avoid ReDoS.
  */
-export const SQL_STATEMENT_START_PATTERN = new RegExp(
-  `^\\s*(?:--[^\\n]*\\n\\s*)*(?:${SQL_STATEMENT_KEYWORDS.join('|')})\\b`,
+export function matchesSqlStatementStart(text: string): boolean {
+  let s = text;
+  // Strip leading whitespace and -- comments iteratively
+  while (true) {
+    s = s.replace(/^\s+/, '');
+    if (s.startsWith('--')) {
+      const nl = s.indexOf('\n');
+      if (nl === -1) { return false; }
+      s = s.slice(nl + 1);
+    } else {
+      break;
+    }
+  }
+  return SQL_STATEMENT_START_SIMPLE.test(s);
+}
+
+const SQL_STATEMENT_START_SIMPLE = new RegExp(
+  `^(?:${SQL_STATEMENT_KEYWORDS.join('|')})\\b`,
   'i'
 );
 

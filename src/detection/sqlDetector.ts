@@ -1,8 +1,8 @@
 import { SqlRegion } from '../types';
 import { extractStrings, replaceInterpolations } from './stringExtractor';
 import {
-  SQL_STATEMENT_START_PATTERN,
-  ALL_KEYWORDS_PATTERN,
+  matchesSqlStatementStart,
+  ALL_SQL_KEYWORDS,
   MIN_SQL_STRING_LENGTH,
 } from './patterns';
 
@@ -51,7 +51,7 @@ export function isSqlString(content: string, minKeywords: number = 2): boolean {
   }
 
   // Fast path: starts with a SQL statement keyword
-  if (SQL_STATEMENT_START_PATTERN.test(trimmed)) {
+  if (matchesSqlStatementStart(trimmed)) {
     return true;
   }
 
@@ -69,10 +69,10 @@ export function isSqlString(content: string, minKeywords: number = 2): boolean {
  */
 function countDistinctKeywords(text: string): number {
   const seen = new Set<string>();
-  // Reset regex state
-  ALL_KEYWORDS_PATTERN.lastIndex = 0;
+  // Create regex locally to avoid shared mutable state
+  const pattern = new RegExp(`\\b(?:${ALL_SQL_KEYWORDS.join('|')})\\b`, 'gi');
   let match: RegExpExecArray | null;
-  while ((match = ALL_KEYWORDS_PATTERN.exec(text)) !== null) {
+  while ((match = pattern.exec(text)) !== null) {
     seen.add(match[0].toUpperCase());
   }
   return seen.size;
@@ -86,5 +86,5 @@ export function findSqlRegionAtOffset(
   regions: SqlRegion[],
   offset: number
 ): SqlRegion | undefined {
-  return regions.find(r => offset >= r.startOffset && offset <= r.endOffset);
+  return regions.find(r => offset >= r.startOffset && offset < r.endOffset);
 }

@@ -36,20 +36,17 @@ export function replaceInterpolations(content: string, languageId: string): stri
       return replaceNestedBraces(content, '${', '}', '__P__');
     case 'python':
       // Replace {expr} in f-strings (but not {{ escaped braces }})
-      return content
-        .replace(/\{\{/g, '__LBRACE__')
-        .replace(/\}\}/g, '__RBRACE__')
-        .replace(/\{[^}]*\}/g, '__P__')
-        .replace(/__LBRACE__/g, '{')
-        .replace(/__RBRACE__/g, '}');
+      // Use depth-aware matching to handle nested braces like f"{d[key]}"
+      return replaceNestedBraces(
+        content.replace(/\{\{/g, '__LBRACE__').replace(/\}\}/g, '__RBRACE__'),
+        '{', '}', '__P__'
+      ).replace(/__LBRACE__/g, '{').replace(/__RBRACE__/g, '}');
     case 'csharp':
-      // Replace {expr} in interpolated strings
-      return content
-        .replace(/\{\{/g, '__LBRACE__')
-        .replace(/\}\}/g, '__RBRACE__')
-        .replace(/\{[^}]*\}/g, '__P__')
-        .replace(/__LBRACE__/g, '{')
-        .replace(/__RBRACE__/g, '}');
+      // Replace {expr} in interpolated strings — depth-aware for nested braces
+      return replaceNestedBraces(
+        content.replace(/\{\{/g, '__LBRACE__').replace(/\}\}/g, '__RBRACE__'),
+        '{', '}', '__P__'
+      ).replace(/__LBRACE__/g, '{').replace(/__RBRACE__/g, '}');
     case 'java':
       // Java doesn't have string interpolation (text blocks are plain)
       return content;
@@ -80,6 +77,37 @@ function replaceNestedBraces(text: string, open: string, close: string, placehol
     i = j;
   }
   return result;
+}
+
+/**
+ * Skip a template literal starting at position `pos` (which points to the opening backtick).
+ * Handles nested interpolations with nested template literals recursively.
+ * Returns the index after the closing backtick.
+ */
+function skipTemplateLiteral(text: string, pos: number): number {
+  let i = pos + 1; // skip opening backtick
+  while (i < text.length && text[i] !== '`') {
+    if (text[i] === '\\') {
+      i += 2;
+      continue;
+    }
+    if (text[i] === '$' && text[i + 1] === '{') {
+      let depth = 1;
+      i += 2;
+      while (i < text.length && depth > 0) {
+        if (text[i] === '{') { depth++; }
+        else if (text[i] === '}') { depth--; }
+        else if (text[i] === '`') {
+          i = skipTemplateLiteral(text, i);
+          continue;
+        }
+        i++;
+      }
+      continue;
+    }
+    i++;
+  }
+  return i; // points to closing backtick (or end of text)
 }
 
 // ─── JavaScript / TypeScript ───────────────────────────────────────────
@@ -126,12 +154,8 @@ function extractJavaScriptStrings(text: string): StringLiteral[] {
             if (text[i] === '{') { depth++; }
             else if (text[i] === '}') { depth--; }
             else if (text[i] === '`') {
-              // Nested template literal inside interpolation — skip it
-              i++;
-              while (i < text.length && text[i] !== '`') {
-                if (text[i] === '\\') { i++; }
-                i++;
-              }
+              // Nested template literal inside interpolation — skip recursively
+              i = skipTemplateLiteral(text, i);
             }
             i++;
           }

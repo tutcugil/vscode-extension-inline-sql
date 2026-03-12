@@ -14,6 +14,8 @@ function lazyRequire(moduleName: string): any {
 export class ConnectionManager implements vscode.Disposable {
   private schemaCache: SchemaCache;
   private disposables: vscode.Disposable[] = [];
+  private passwordWarningShown = false;
+  private pendingSchemaFetch: Promise<SchemaInfo | undefined> | undefined;
 
   constructor() {
     const config = vscode.workspace.getConfiguration('inlineSql');
@@ -43,7 +45,18 @@ export class ConnectionManager implements vscode.Disposable {
       return undefined;
     }
 
-    return connections.find(c => c.name === activeName);
+    const conn = connections.find(c => c.name === activeName);
+
+    // Warn once if password is stored in plaintext settings
+    if (conn?.password && !this.passwordWarningShown) {
+      this.passwordWarningShown = true;
+      vscode.window.showWarningMessage(
+        'Inline SQL: Database password is stored in plaintext in settings.json. ' +
+        'Consider using environment variables instead.'
+      );
+    }
+
+    return conn;
   }
 
   async getSchema(): Promise<SchemaInfo | undefined> {
@@ -54,18 +67,29 @@ export class ConnectionManager implements vscode.Disposable {
     const cached = this.schemaCache.get(connConfig.name);
     if (cached) { return cached; }
 
-    // Fetch from database
-    try {
-      const schema = await this.fetchSchema(connConfig);
-      if (schema) {
-        this.schemaCache.set(connConfig.name, schema);
-      }
-      return schema;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      vscode.window.showErrorMessage(`Inline SQL: Failed to fetch schema — ${message}`);
-      return undefined;
+    // Deduplicate concurrent fetches
+    if (this.pendingSchemaFetch) {
+      return this.pendingSchemaFetch;
     }
+
+    // Fetch from database
+    this.pendingSchemaFetch = (async () => {
+      try {
+        const schema = await this.fetchSchema(connConfig);
+        if (schema) {
+          this.schemaCache.set(connConfig.name, schema);
+        }
+        return schema;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`Inline SQL: Failed to fetch schema`);
+        return undefined;
+      } finally {
+        this.pendingSchemaFetch = undefined;
+      }
+    })();
+
+    return this.pendingSchemaFetch;
   }
 
   getSchemaSync(): SchemaInfo | undefined {
@@ -157,7 +181,7 @@ export class ConnectionManager implements vscode.Disposable {
       database: config.database,
       user: config.user,
       password: config.password,
-      options: { encrypt: false, trustServerCertificate: true },
+      options: { encrypt: true, trustServerCertificate: false },
     });
 
     try {

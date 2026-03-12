@@ -41,7 +41,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
   private punctuationDecorationType: vscode.TextEditorDecorationType;
 
   private disposables: vscode.Disposable[] = [];
-  private debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor() {
     // Light: SSMS classic | Dark: soft pastel tones for dark backgrounds
@@ -100,10 +100,17 @@ export class SqlDecorationProvider implements vscode.Disposable {
   }
 
   private scheduleUpdate(editor: vscode.TextEditor): void {
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-    }
-    this.debounceTimer = setTimeout(() => this.updateDecorations(editor), 200);
+    const key = editor.document.uri.toString();
+    const existing = this.debounceTimers.get(key);
+    if (existing) { clearTimeout(existing); }
+
+    this.debounceTimers.set(key, setTimeout(() => {
+      this.debounceTimers.delete(key);
+      // Verify the editor is still active before applying decorations
+      if (vscode.window.activeTextEditor === editor) {
+        this.updateDecorations(editor);
+      }
+    }, 200));
   }
 
   private updateDecorations(editor: vscode.TextEditor): void {
@@ -212,7 +219,9 @@ export class SqlDecorationProvider implements vscode.Disposable {
   }
 
   dispose(): void {
-    if (this.debounceTimer) { clearTimeout(this.debounceTimer); }
+    for (const timer of this.debounceTimers.values()) {
+      clearTimeout(timer);
+    }
     this.dmlDecorationType.dispose();
     this.clauseDecorationType.dispose();
     this.typeDecorationType.dispose();
