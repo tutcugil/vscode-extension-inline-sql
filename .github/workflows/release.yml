@@ -63,3 +63,7 @@ jobs:
           body: ${{ github.event.pull_request.body }}
           prerelease: ${{ github.event.pull_request.base.ref == 'test' }}
           files: "*.vsix"
+
+      - name: Publish to VS Code Marketplace
+        if: github.event.pull_request.base.ref == 'prod'
+        run: npx @vscode/vsce publish --no-dependencies -p ${{ secrets.VSCE_PAT }}
