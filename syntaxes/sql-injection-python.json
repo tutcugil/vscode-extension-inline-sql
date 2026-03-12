@@ -1,0 +1,13 @@
+{
+  "scopeName": "inline-sql.injection.python",
+  "injectionSelector": "L:string.quoted.single.python, L:string.quoted.multi.python, L:string.quoted.raw.single.python, L:string.quoted.raw.multi.python, L:meta.fstring.python",
+  "patterns": [
+    { "include": "inline-sql.injection.typescript#sql-keywords" },
+    { "include": "inline-sql.injection.typescript#sql-dml" },
+    { "include": "inline-sql.injection.typescript#sql-types" },
+    { "include": "inline-sql.injection.typescript#sql-functions" },
+    { "include": "inline-sql.injection.typescript#sql-operators" },
+    { "include": "inline-sql.injection.typescript#sql-star" },
+    { "include": "inline-sql.injection.typescript#sql-numeric" }
+  ]
+}
