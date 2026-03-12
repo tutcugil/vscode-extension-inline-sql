@@ -194,7 +194,7 @@ describe('Replace Interpolations', () => {
   it('should replace C# interpolations', () => {
     const result = replaceInterpolations('SELECT * FROM users WHERE id = {userId}', 'csharp');
     assert.ok(!result.includes('{userId}'));
-    assert.ok(result.includes('__P__'));
+    assert.ok(result.includes('@__p__'));
   });
 
   it('should not modify Java strings', () => {
