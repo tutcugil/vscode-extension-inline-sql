@@ -2,7 +2,7 @@
   "name": "vscode-extension-inline-sql",
   "displayName": "Inline SQL",
   "description": "SQL syntax highlighting, autocomplete, validation, and formatting for inline SQL strings",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "tutcugil",
   "engines": {
     "vscode": "^1.85.0"
@@ -97,8 +97,15 @@
         },
         "inlineSql.validation.dialect": {
           "type": "string",
-          "default": "mysql",
-          "enum": ["mysql", "postgresql", "transactsql", "sqlite"],
+          "default": "auto",
+          "enum": ["auto", "mysql", "postgresql", "transactsql", "sqlite"],
+          "enumDescriptions": [
+            "Auto-detect based on host language (C# → TransactSQL, others → MySQL)",
+            "MySQL",
+            "PostgreSQL",
+            "TransactSQL (SQL Server)",
+            "SQLite"
+          ],
           "description": "SQL dialect for validation"
         },
         "inlineSql.formatting.indent": {

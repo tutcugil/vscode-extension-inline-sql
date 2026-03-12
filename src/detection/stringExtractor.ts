@@ -23,29 +23,39 @@ export function extractStrings(text: string, languageId: string): StringLiteral[
 }
 
 /**
+ * Get the SQL-parser-friendly placeholder for a given host language.
+ * C# (T-SQL): @__p__ (valid T-SQL parameter syntax)
+ * Others: __P__ (valid identifier in most dialects)
+ */
+function getPlaceholder(languageId: string): string {
+  return languageId === 'csharp' ? '@__p__' : '__P__';
+}
+
+/**
  * Replace interpolation expressions with a SQL-safe placeholder.
  * Returns the cleaned SQL text.
  */
 export function replaceInterpolations(content: string, languageId: string): string {
+  const placeholder = getPlaceholder(languageId);
   switch (languageId) {
     case 'typescript':
     case 'javascript':
     case 'typescriptreact':
     case 'javascriptreact':
       // Replace ${...} with placeholder, handling nested braces
-      return replaceNestedBraces(content, '${', '}', '__P__');
+      return replaceNestedBraces(content, '${', '}', placeholder);
     case 'python':
       // Replace {expr} in f-strings (but not {{ escaped braces }})
       // Use depth-aware matching to handle nested braces like f"{d[key]}"
       return replaceNestedBraces(
         content.replace(/\{\{/g, '__LBRACE__').replace(/\}\}/g, '__RBRACE__'),
-        '{', '}', '__P__'
+        '{', '}', placeholder
       ).replace(/__LBRACE__/g, '{').replace(/__RBRACE__/g, '}');
     case 'csharp':
       // Replace {expr} in interpolated strings — depth-aware for nested braces
       return replaceNestedBraces(
         content.replace(/\{\{/g, '__LBRACE__').replace(/\}\}/g, '__RBRACE__'),
-        '{', '}', '__P__'
+        '{', '}', placeholder
       ).replace(/__LBRACE__/g, '{').replace(/__RBRACE__/g, '}');
     case 'java':
       // Java doesn't have string interpolation (text blocks are plain)
