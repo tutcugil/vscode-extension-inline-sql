@@ -66,6 +66,7 @@ export class SqlFormattingProvider implements vscode.Disposable {
 
     // Apply edits in reverse order to preserve offsets
     const sortedRegions = [...regions].sort((a, b) => b.startOffset - a.startOffset);
+    let formattedCount = 0;
 
     await editor.edit(editBuilder => {
       for (const region of sortedRegions) {
@@ -76,11 +77,12 @@ export class SqlFormattingProvider implements vscode.Disposable {
             document.positionAt(region.endOffset),
           );
           editBuilder.replace(range, formatted);
+          formattedCount++;
         }
       }
     });
 
-    vscode.window.showInformationMessage(`Inline SQL: Formatted ${regions.length} SQL region(s).`);
+    vscode.window.showInformationMessage(`Inline SQL: Formatted ${formattedCount} SQL region(s).`);
   }
 
   private formatRegion(document: vscode.TextDocument, region: SqlRegion): string | undefined {

@@ -41,7 +41,10 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
       }),
       vscode.workspace.onDidCloseTextDocument(doc => {
         this.diagnosticCollection.delete(doc.uri);
-        this.debounceTimers.delete(doc.uri.toString());
+        const key = doc.uri.toString();
+        const existing = this.debounceTimers.get(key);
+        if (existing) { clearTimeout(existing); }
+        this.debounceTimers.delete(key);
       }),
       vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('inlineSql.validation')) {
@@ -115,6 +118,9 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     const sql = region.sqlText.trim();
     if (!sql) { return undefined; }
 
+    // Calculate how many leading chars were trimmed so we can adjust offsets
+    const leadingTrimmed = region.sqlText.length - region.sqlText.trimStart().length;
+
     try {
       this.parser.astify(sql, { database: dialect });
       return undefined; // Valid SQL
@@ -125,7 +131,7 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
       // Try to map error position back to document
       let range: vscode.Range;
       if (error.location?.start) {
-        const errorOffset = region.startOffset + (error.location.start.offset || 0);
+        const errorOffset = region.startOffset + leadingTrimmed + (error.location.start.offset || 0);
         const startPos = document.positionAt(errorOffset);
         // Highlight from error position to end of word or a few chars
         const endOffset = Math.min(errorOffset + 10, region.endOffset);
