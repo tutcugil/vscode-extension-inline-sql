@@ -24,11 +24,15 @@
     "commands": [
       {
         "command": "inlineSql.formatSql",
-        "title": "Format Inline SQL"
+        "title": "Inline SQL: Format SQL at Cursor"
+      },
+      {
+        "command": "inlineSql.formatAllSql",
+        "title": "Inline SQL: Format All SQL in File"
       },
       {
         "command": "inlineSql.refreshSchema",
-        "title": "Refresh SQL Schema Cache"
+        "title": "Inline SQL: Refresh Schema Cache"
       }
     ],
     "grammars": [
