@@ -71,7 +71,13 @@ jobs:
           files: "*.vsix"
 
       - name: Publish to GitHub Packages
-        run: npm publish
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            pkg.name = '@tutcugil/vscode-extension-inline-sql';
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
