@@ -2,7 +2,7 @@
   "name": "vscode-extension-inline-sql",
   "displayName": "Inline SQL",
   "description": "SQL syntax highlighting, autocomplete, validation, and formatting for inline SQL strings",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "publisher": "tutcugil",
   "engines": {
     "vscode": "^1.85.0"
@@ -208,6 +208,9 @@
   "dependencies": {
     "node-sql-parser": "^5.3.2",
     "sql-formatter": "^15.4.5"
+  },
+  "overrides": {
+    "serialize-javascript": ">=7.0.3"
   },
   "repository": {
     "type": "git",

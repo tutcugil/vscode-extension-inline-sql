@@ -166,8 +166,13 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     // Remove OUTPUT ... INTO ... clause (T-SQL specific, not supported by parser)
     s = s.replace(/\bOUTPUT\s+[\s\S]*?\bINTO\s+\w+\s*\([^)]*\)\s*/gi, '');
 
-    // Replace remaining @param references with literals for parser compatibility
-    // e.g. @node → 1, @nodeChecksum → 1 (keeps SQL structurally valid)
+    // Replace placeholders in table positions with valid table name
+    // e.g. INNER JOIN @__p__ → INNER JOIN _T_, FROM __P__ → FROM _T_
+    s = s.replace(/(?<=\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+)(?:@__p__|__P__)/gi, '_T_');
+
+    // Replace remaining @param / placeholder references with literals for parser compatibility
+    // e.g. @node → 1, @nodeChecksum → 1, __P__ → 1 (keeps SQL structurally valid)
+    s = s.replace(/@__p__|__P__/g, '1');
     s = s.replace(/@\w+/g, '1');
 
     // Remove trailing semicolons that some dialects don't like
