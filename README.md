@@ -1,16 +1,10 @@
 # Inline SQL
 
-A Visual Studio Code extension that provides **syntax highlighting**, **autocomplete**, **validation**, and **formatting** for SQL strings embedded in your code. Supports TypeScript, JavaScript, Python, Java, and C#.
+A Visual Studio Code extension that provides **syntax highlighting**, **autocomplete**, **validation**, and **formatting** for SQL strings embedded in your code.
 
 No markers or special tags required — SQL is detected automatically.
 
-## Features
-
-### Syntax Highlighting
-
-SQL keywords, types, functions, and literals are highlighted inside string literals. Works with both light and dark themes.
-
-Supported string types per language:
+## Supported Languages
 
 | Language | String Types |
 |----------|-------------|
@@ -19,20 +13,26 @@ Supported string types per language:
 | Java | Double quotes, text blocks (`"""`) |
 | C# | Regular, verbatim (`@"`), interpolated (`$"`), raw string literals (`$"""`) |
 
+## Features
+
+### Syntax Highlighting
+
+SQL keywords, types, functions, and literals are highlighted inside string literals with categorized colors. Works with both light and dark themes.
+
 ### Autocomplete
 
-- **SQL Keywords**: DML statements, clauses, JOIN variants, functions
-- **Snippet Templates**: e.g. `SELECT ... FROM ...`, `INSERT INTO ... VALUES ...`
-- **Schema-Aware** (optional): Table and column names from a live database connection
+- **SQL Keywords** — DML statements, clauses, JOIN variants, functions
+- **Snippet Templates** — e.g. `SELECT ... FROM ...`, `INSERT INTO ... VALUES ...`
+- **Schema-Aware** (optional) — Table and column names from a live database connection
 
 Triggers on `.` (for `table.column`) and `Space` (after keywords).
 
 ### Validation / Linting
 
-- Real-time SQL syntax checking with `node-sql-parser`
-- **Auto-dialect detection**: C# files use TransactSQL, others default to MySQL
+- Real-time SQL syntax checking
+- **Auto-dialect detection** — C# files use TransactSQL, others default to MySQL
 - Configurable dialect: `auto`, `mysql`, `postgresql`, `transactsql`, `sqlite`
-- Smart skip for SQL fragments (`SET`, `BEGIN`, `COMMIT`, `DECLARE`, `UNION ALL`, etc.)
+- Smart skip for SQL fragments and T-SQL specific syntax
 - Interpolation placeholders are normalized for parser compatibility
 
 ### Formatting
@@ -40,28 +40,6 @@ Triggers on `.` (for `table.column`) and `Space` (after keywords).
 - Format SQL at cursor position or all SQL strings in file
 - Configurable indent, keyword casing, and dialect
 - Preserves host code indentation
-
-## Installation
-
-### From VS Code Marketplace
-
-Search for **"Inline SQL"** in the Extensions sidebar, or:
-
-```
-ext install tutcugil.vscode-extension-inline-sql
-```
-
-### From VSIX File
-
-```bash
-code --install-extension inline-sql-x.x.x.vsix
-```
-
-Or in VS Code: **Extensions sidebar** > `...` menu > **Install from VSIX...**
-
-### From GitHub Releases
-
-Download the latest `.vsix` from [Releases](https://github.com/tutcugil/vscode-extension-inline-sql/releases) and install manually.
 
 ## Commands
 
@@ -134,93 +112,14 @@ Connection object:
 
 ## How It Works
 
-### SQL Detection
-
 1. **String Extraction** — Language-specific parser extracts all string literals, handling comments, escape sequences, and nested interpolations
-2. **Interpolation Replacement** — Template expressions are replaced with SQL-safe placeholders (`@__p__` for C#, `__P__` for others)
+2. **Interpolation Replacement** — Template expressions are replaced with SQL-safe placeholders for parser compatibility
 3. **Classification** — Two-tier approach:
    - **Fast path**: String starts with a SQL keyword (`SELECT`, `INSERT`, `CREATE`, etc.)
    - **Scoring**: String contains 2+ distinct SQL keywords and is at least 20 characters
-
-### Highlighting
-
-Two layers work together:
-- **TextMate Grammar Injection** — Provides base SQL syntax scopes inside host language strings
-- **Decoration API** — Adds categorized highlighting (DML, clauses, types, functions, identifiers, punctuation) that works even when VS Code's semantic tokenization is active
-
-## Development
-
-### Prerequisites
-
-- Node.js 20+
-- VS Code 1.85+
-
-### Setup
-
-```bash
-git clone https://github.com/tutcugil/vscode-extension-inline-sql.git
-cd vscode-extension-inline-sql
-npm install
-```
-
-### Build & Run
-
-```bash
-npm run compile     # Development build
-npm run watch       # Watch mode
-npm run package     # Production build
-```
-
-Press **F5** in VS Code to launch the Extension Development Host.
-
-### Test
-
-```bash
-npm run test:unit   # Unit tests (Mocha)
-npm run lint        # ESLint
-```
-
-### Package
-
-```bash
-npx @vscode/vsce package --no-dependencies
-```
-
-## Project Structure
-
-```
-src/
-├── extension.ts                 # Entry point
-├── types.ts                     # Shared types
-├── detection/
-│   ├── sqlDetector.ts           # SQL detection engine
-│   ├── stringExtractor.ts       # Language-specific string extraction
-│   └── patterns.ts              # SQL keyword patterns
-├── highlighting/
-│   └── sqlDecorationProvider.ts # Decoration-based highlighting
-├── completion/
-│   ├── sqlCompletionProvider.ts # Autocomplete provider
-│   └── sqlKeywords.ts           # Keyword + snippet definitions
-├── validation/
-│   └── sqlDiagnosticsProvider.ts # Syntax validation
-├── formatting/
-│   └── sqlFormattingProvider.ts  # SQL formatting
-└── db/
-    ├── connectionManager.ts     # Database connection management
-    └── schemaCache.ts           # Schema metadata cache
-
-syntaxes/                        # TextMate grammar injection files
-test/                            # Unit tests and fixtures
-```
-
-## CI/CD
-
-Automated via GitHub Actions (`.github/workflows/release.yml`):
-
-- **Trigger**: PR merged to `test` or `prod` branch
-- **test branch**: Creates a prerelease with `-test` version suffix
-- **prod branch**: Creates a stable release + publishes to VS Code Marketplace
-- Both branches publish to GitHub Packages
+4. **Highlighting** — Two layers work together:
+   - **TextMate Grammar Injection** for base SQL syntax scopes
+   - **Decoration API** for categorized highlighting that works with semantic tokenization
 
 ## License
 
