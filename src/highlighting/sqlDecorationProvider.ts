@@ -30,6 +30,45 @@ const FUNCTION_KEYWORDS = new Set([
   'FORMAT', 'STRING_AGG',
 ]);
 
+/**
+ * Iteratively find SQL comment spans (avoids ReDoS with block comments).
+ * Handles -- line comments and /* block comments *​/.
+ */
+function findCommentSpans(text: string): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  let i = 0;
+  while (i < text.length) {
+    // Line comment: --
+    if (text[i] === '-' && text[i + 1] === '-') {
+      const start = i;
+      i += 2;
+      while (i < text.length && text[i] !== '\n') { i++; }
+      spans.push({ start, end: i });
+      continue;
+    }
+    // Block comment: /* ... */
+    if (text[i] === '/' && text[i + 1] === '*') {
+      const start = i;
+      i += 2;
+      while (i < text.length - 1) {
+        if (text[i] === '*' && text[i + 1] === '/') {
+          i += 2;
+          break;
+        }
+        i++;
+      }
+      // If unterminated, treat rest as comment
+      if (i >= text.length - 1 && !(text[i - 2] === '*' && text[i - 1] === '/')) {
+        i = text.length;
+      }
+      spans.push({ start, end: i });
+      continue;
+    }
+    i++;
+  }
+  return spans;
+}
+
 export class SqlDecorationProvider implements vscode.Disposable {
   private commentDecorationType: vscode.TextEditorDecorationType;
   private dmlDecorationType: vscode.TextEditorDecorationType;
@@ -155,29 +194,22 @@ export class SqlDecorationProvider implements vscode.Disposable {
     const punctuationPattern = /[(),;.=<>!+\-/%&|^~@#]/g;
     // Bracket identifiers: [column_name], [dbo], [table] etc.
     const bracketIdentifierPattern = /\[([^\]]+)\]/g;
-    // SQL comments: -- line comments and /* block comments */
-    const commentPattern = /--[^\n]*|\/\*[\s\S]*?\*\//g;
-
     for (const region of regions) {
       const regionText = text.slice(region.startOffset, region.endOffset);
 
-      // Find comment ranges first so we can skip them for other tokens
+      // Find comment ranges using iterative parsing (avoids ReDoS with block comments)
       const commentSpans: Array<{ start: number; end: number }> = [];
       let match: RegExpExecArray | null;
-      commentPattern.lastIndex = 0;
-      while ((match = commentPattern.exec(regionText)) !== null) {
-        const matchStart = match.index;
-        const matchEnd = match.index + match[0].length;
-        commentSpans.push({ start: matchStart, end: matchEnd });
-        const startPos = doc.positionAt(region.startOffset + matchStart);
-        const endPos = doc.positionAt(region.startOffset + matchEnd);
+      for (const span of findCommentSpans(regionText)) {
+        commentSpans.push(span);
+        const startPos = doc.positionAt(region.startOffset + span.start);
+        const endPos = doc.positionAt(region.startOffset + span.end);
         commentRanges.push({ range: new vscode.Range(startPos, endPos) });
       }
 
       // Match bracket identifiers: [column_name] etc.
       const bracketSpans: Array<{ start: number; end: number }> = [];
-      bracketIdentifierPattern.lastIndex = 0;
-      while ((match = bracketIdentifierPattern.exec(regionText)) !== null) {
+      for (match of regionText.matchAll(bracketIdentifierPattern)) {
         if (commentSpans.some(c => match!.index >= c.start && match!.index < c.end)) { continue; }
         const matchStart = match.index;
         const matchEnd = match.index + match[0].length;
@@ -206,8 +238,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
         bracketSpans.some(b => offset >= b.start && offset < b.end);
 
       // Match words
-      wordPattern.lastIndex = 0;
-      while ((match = wordPattern.exec(regionText)) !== null) {
+      for (match of regionText.matchAll(wordPattern)) {
         if (isInComment(match.index) || isInBracket(match.index)) { continue; }
 
         const word = match[0].toUpperCase();
@@ -235,8 +266,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
       }
 
       // Match numbers
-      numericPattern.lastIndex = 0;
-      while ((match = numericPattern.exec(regionText)) !== null) {
+      for (match of regionText.matchAll(numericPattern)) {
         if (isInComment(match.index) || isInBracket(match.index)) { continue; }
         const startPos = doc.positionAt(region.startOffset + match.index);
         const endPos = doc.positionAt(region.startOffset + match.index + match[0].length);
@@ -244,8 +274,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
       }
 
       // Match star
-      starPattern.lastIndex = 0;
-      while ((match = starPattern.exec(regionText)) !== null) {
+      for (match of regionText.matchAll(starPattern)) {
         if (isInComment(match.index) || isInBracket(match.index)) { continue; }
         const startPos = doc.positionAt(region.startOffset + match.index);
         const endPos = doc.positionAt(region.startOffset + match.index + 1);
@@ -253,8 +282,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
       }
 
       // Match punctuation
-      punctuationPattern.lastIndex = 0;
-      while ((match = punctuationPattern.exec(regionText)) !== null) {
+      for (match of regionText.matchAll(punctuationPattern)) {
         if (isInComment(match.index) || isInBracket(match.index)) { continue; }
         const startPos = doc.positionAt(region.startOffset + match.index);
         const endPos = doc.positionAt(region.startOffset + match.index + 1);

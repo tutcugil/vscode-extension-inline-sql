@@ -107,17 +107,19 @@ function skipTemplateLiteral(text: string, pos: number): number {
       while (i < text.length && depth > 0) {
         if (text[i] === '{') { depth++; }
         else if (text[i] === '}') { depth--; }
-        else if (text[i] === '`') {
+        else if (i < text.length && text[i] === '`') {
           i = skipTemplateLiteral(text, i);
           continue;
         }
-        i++;
+        if (i < text.length) { i++; }
       }
       continue;
     }
     i++;
   }
-  return i; // points to closing backtick (or end of text)
+  // Points to closing backtick, or text.length if unterminated.
+  // Callers are responsible for incrementing past the backtick.
+  return Math.min(i, text.length);
 }
 
 // ─── JavaScript / TypeScript ───────────────────────────────────────────

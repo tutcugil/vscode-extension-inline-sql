@@ -209,7 +209,9 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
       // Try to map error position back to document
       let range: vscode.Range;
       if (error.location?.start) {
-        const errorOffset = region.startOffset + leadingTrimmed + (error.location.start.offset || 0);
+        const rawOffset = region.startOffset + leadingTrimmed + (error.location.start.offset || 0);
+        // Clamp to region bounds to prevent out-of-range errors
+        const errorOffset = Math.max(region.startOffset, Math.min(rawOffset, region.endOffset - 1));
         const startPos = document.positionAt(errorOffset);
         // Highlight from error position to end of word or a few chars
         const endOffset = Math.min(errorOffset + 10, region.endOffset);

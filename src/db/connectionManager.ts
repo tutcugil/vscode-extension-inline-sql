@@ -2,8 +2,14 @@ import * as vscode from 'vscode';
 import { DbConnectionConfig, SchemaInfo, TableInfo, ColumnInfo } from '../types';
 import { SchemaCache } from './schemaCache';
 
+/** Whitelist of allowed database driver modules */
+const ALLOWED_DRIVER_MODULES = new Set(['pg', 'mysql2/promise', 'mssql']);
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function lazyRequire(moduleName: string): any {
+  if (!ALLOWED_DRIVER_MODULES.has(moduleName)) {
+    throw new Error(`Driver module "${moduleName}" is not in the allowed list.`);
+  }
   try {
     return require(moduleName);
   } catch {
@@ -11,22 +17,27 @@ function lazyRequire(moduleName: string): any {
   }
 }
 
+/** Connection timeout in milliseconds */
+const CONNECTION_TIMEOUT_MS = 10000;
+
 export class ConnectionManager implements vscode.Disposable {
   private schemaCache: SchemaCache;
   private disposables: vscode.Disposable[] = [];
   private passwordWarningShown = false;
-  private pendingSchemaFetch: Promise<SchemaInfo | undefined> | undefined;
+  private pendingSchemaFetch: Promise<SchemaInfo | undefined> | null = null;
 
   constructor() {
     const config = vscode.workspace.getConfiguration('inlineSql');
-    const ttl = config.get<number>('schemaCacheTTL', 300);
+    const ttl = clampTTL(config.get<number>('schemaCacheTTL', 300));
     this.schemaCache = new SchemaCache(ttl);
 
     // Listen for config changes
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('inlineSql.schemaCacheTTL')) {
-          const newTTL = vscode.workspace.getConfiguration('inlineSql').get<number>('schemaCacheTTL', 300);
+          const newTTL = clampTTL(
+            vscode.workspace.getConfiguration('inlineSql').get<number>('schemaCacheTTL', 300)
+          );
           this.schemaCache.setTTL(newTTL);
         }
         if (e.affectsConfiguration('inlineSql.connections') || e.affectsConfiguration('inlineSql.activeConnection')) {
@@ -46,9 +57,22 @@ export class ConnectionManager implements vscode.Disposable {
     }
 
     const conn = connections.find(c => c.name === activeName);
+    if (!conn) { return undefined; }
+
+    // Validate host format (basic sanity check)
+    if (conn.host && !/^[\w.\-:[\]]+$/.test(conn.host)) {
+      vscode.window.showErrorMessage('Inline SQL: Invalid host format in connection configuration.');
+      return undefined;
+    }
+
+    // Validate port range
+    if (conn.port !== undefined && (conn.port < 1 || conn.port > 65535 || !Number.isInteger(conn.port))) {
+      vscode.window.showErrorMessage('Inline SQL: Invalid port in connection configuration (must be 1-65535).');
+      return undefined;
+    }
 
     // Warn once if password is stored in plaintext settings
-    if (conn?.password && !this.passwordWarningShown) {
+    if (conn.password && !this.passwordWarningShown) {
       this.passwordWarningShown = true;
       vscode.window.showWarningMessage(
         'Inline SQL: Database password is stored in plaintext in settings.json. ' +
@@ -67,29 +91,37 @@ export class ConnectionManager implements vscode.Disposable {
     const cached = this.schemaCache.get(connConfig.name);
     if (cached) { return cached; }
 
-    // Deduplicate concurrent fetches
+    // Deduplicate concurrent fetches — use a stable reference
     if (this.pendingSchemaFetch) {
       return this.pendingSchemaFetch;
     }
 
-    // Fetch from database
-    this.pendingSchemaFetch = (async () => {
-      try {
-        const schema = await this.fetchSchema(connConfig);
-        if (schema) {
-          this.schemaCache.set(connConfig.name, schema);
-        }
-        return schema;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`Inline SQL: Failed to fetch schema`);
-        return undefined;
-      } finally {
-        this.pendingSchemaFetch = undefined;
-      }
-    })();
+    const fetchPromise = this.doFetchSchema(connConfig);
+    this.pendingSchemaFetch = fetchPromise;
 
-    return this.pendingSchemaFetch;
+    // Clear pending reference only if it's still the same promise (prevents race)
+    fetchPromise.finally(() => {
+      if (this.pendingSchemaFetch === fetchPromise) {
+        this.pendingSchemaFetch = null;
+      }
+    });
+
+    return fetchPromise;
+  }
+
+  private async doFetchSchema(connConfig: DbConnectionConfig): Promise<SchemaInfo | undefined> {
+    try {
+      const schema = await this.fetchSchema(connConfig);
+      if (schema) {
+        this.schemaCache.set(connConfig.name, schema);
+      }
+      return schema;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('Inline SQL: schema fetch error:', message);
+      vscode.window.showErrorMessage(`Inline SQL: Failed to fetch schema — ${message}`);
+      return undefined;
+    }
   }
 
   getSchemaSync(): SchemaInfo | undefined {
@@ -129,6 +161,8 @@ export class ConnectionManager implements vscode.Disposable {
       database: config.database,
       user: config.user,
       password: config.password,
+      connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
+      query_timeout: CONNECTION_TIMEOUT_MS,
     });
 
     try {
@@ -144,8 +178,11 @@ export class ConnectionManager implements vscode.Disposable {
       `);
 
       return buildSchemaFromRows(result.rows, 'table_schema', 'table_name', 'column_name', 'data_type', 'is_nullable');
+    } catch (err) {
+      await client.end().catch(() => { /* ignore cleanup error */ });
+      throw new Error(`PostgreSQL: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      await client.end();
+      await client.end().catch(() => { /* ignore cleanup error */ });
     }
   }
 
@@ -157,6 +194,7 @@ export class ConnectionManager implements vscode.Disposable {
       database: config.database,
       user: config.user,
       password: config.password,
+      connectTimeout: CONNECTION_TIMEOUT_MS,
     });
 
     try {
@@ -168,8 +206,10 @@ export class ConnectionManager implements vscode.Disposable {
       `, [config.database]);
 
       return buildSchemaFromRows(rows as Record<string, string>[], 'TABLE_SCHEMA', 'TABLE_NAME', 'COLUMN_NAME', 'DATA_TYPE', 'IS_NULLABLE');
+    } catch (err) {
+      throw new Error(`MySQL: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      await connection.end();
+      await connection.end().catch(() => { /* ignore cleanup error */ });
     }
   }
 
@@ -182,6 +222,8 @@ export class ConnectionManager implements vscode.Disposable {
       user: config.user,
       password: config.password,
       options: { encrypt: true, trustServerCertificate: false },
+      connectionTimeout: CONNECTION_TIMEOUT_MS,
+      requestTimeout: CONNECTION_TIMEOUT_MS,
     });
 
     try {
@@ -196,14 +238,21 @@ export class ConnectionManager implements vscode.Disposable {
       `);
 
       return buildSchemaFromRows(result.recordset, 'table_schema', 'table_name', 'column_name', 'data_type', 'is_nullable');
+    } catch (err) {
+      throw new Error(`MSSQL: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      await pool.close();
+      await pool.close().catch(() => { /* ignore cleanup error */ });
     }
   }
 
   dispose(): void {
     this.disposables.forEach(d => d.dispose());
   }
+}
+
+/** Clamp TTL to a valid range: 1–86400 seconds (1 second to 24 hours) */
+function clampTTL(value: number): number {
+  return Math.max(1, Math.min(Math.floor(value), 86400));
 }
 
 function buildSchemaFromRows(
@@ -213,13 +262,18 @@ function buildSchemaFromRows(
   const tableMap = new Map<string, TableInfo>();
 
   for (const row of rows) {
+    // Skip rows with missing required columns
+    if (row[tableCol] == null || row[columnCol] == null || row[typeCol] == null) {
+      continue;
+    }
+
     const tableName = String(row[tableCol]);
     const key = tableName.toLowerCase();
 
     if (!tableMap.has(key)) {
       tableMap.set(key, {
         name: tableName,
-        schema: row[schemaCol] ? String(row[schemaCol]) : undefined,
+        schema: row[schemaCol] != null ? String(row[schemaCol]) : undefined,
         columns: [],
       });
     }

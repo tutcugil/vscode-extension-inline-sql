@@ -84,9 +84,24 @@ function getCompletionContext(sqlBefore: string): CompletionContext {
   return 'general';
 }
 
+/** SQL keywords that should not be treated as table names */
+const SQL_KEYWORD_SET = new Set([
+  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'JOIN', 'ON',
+  'INSERT', 'INTO', 'UPDATE', 'DELETE', 'SET', 'VALUES',
+  'GROUP', 'ORDER', 'BY', 'HAVING', 'LIMIT', 'OFFSET',
+  'INNER', 'LEFT', 'RIGHT', 'OUTER', 'CROSS', 'FULL',
+  'CREATE', 'ALTER', 'DROP', 'TABLE', 'INDEX', 'VIEW',
+  'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'AS', 'NOT', 'NULL',
+  'IN', 'EXISTS', 'BETWEEN', 'LIKE', 'IS', 'UNION', 'ALL',
+]);
+
 function getTableNameBeforeDot(sqlBefore: string): string | undefined {
   const match = sqlBefore.trimEnd().match(/(\w+)\.\s*$/);
-  return match ? match[1] : undefined;
+  if (!match) { return undefined; }
+  const name = match[1];
+  // Skip SQL keywords that happen to precede a dot
+  if (SQL_KEYWORD_SET.has(name.toUpperCase())) { return undefined; }
+  return name;
 }
 
 function extractReferencedTables(sqlBefore: string, schema: SchemaInfo): TableInfo[] {

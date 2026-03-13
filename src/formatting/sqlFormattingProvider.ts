@@ -115,8 +115,10 @@ export class SqlFormattingProvider implements vscode.Disposable {
       }
 
       return formatted;
-    } catch {
-      vscode.window.showWarningMessage('Inline SQL: Failed to format SQL.');
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error('Inline SQL: format error:', detail);
+      vscode.window.showWarningMessage(`Inline SQL: Failed to format SQL — ${detail}`);
       return undefined;
     }
   }

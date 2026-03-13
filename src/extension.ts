@@ -40,11 +40,15 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Commands
   const formatCommand = vscode.commands.registerCommand('inlineSql.formatSql', () => {
-    formattingProvider.formatSqlAtCursor().catch(() => { /* error shown inside */ });
+    formattingProvider.formatSqlAtCursor().catch(err => {
+      console.error('Inline SQL: formatSqlAtCursor failed:', err);
+    });
   });
 
   const formatAllCommand = vscode.commands.registerCommand('inlineSql.formatAllSql', () => {
-    formattingProvider.formatAllSqlInDocument().catch(() => { /* error shown inside */ });
+    formattingProvider.formatAllSqlInDocument().catch(err => {
+      console.error('Inline SQL: formatAllSqlInDocument failed:', err);
+    });
   });
 
   const refreshCommand = vscode.commands.registerCommand('inlineSql.refreshSchema', async () => {
@@ -56,7 +60,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // Auto-fetch schema on activation if connection is configured
   const connConfig = connectionManager.getActiveConnectionConfig();
   if (connConfig) {
-    connectionManager.getSchema().catch(() => { /* error shown inside */ });
+    connectionManager.getSchema().catch(err => {
+      console.error('Inline SQL: schema fetch failed:', err);
+    });
   }
 }
 
