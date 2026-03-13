@@ -100,8 +100,8 @@ export class SqlDecorationProvider implements vscode.Disposable {
       dark:  { color: '#569CD6' },
     });
     this.typeDecorationType = vscode.window.createTextEditorDecorationType({
-      light: { color: '#2E8B57', fontStyle: 'italic' },
-      dark:  { color: '#4EC9B0', fontStyle: 'italic' },
+      light: { color: '#2E8B57' },
+      dark:  { color: '#4EC9B0' },
     });
     this.functionDecorationType = vscode.window.createTextEditorDecorationType({
       light: { color: '#FF00FF' },
@@ -127,8 +127,8 @@ export class SqlDecorationProvider implements vscode.Disposable {
     });
     // Interpolation variables: {suffix}, ${expr}, {tempTable} — distinct warm color
     this.interpolationDecorationType = vscode.window.createTextEditorDecorationType({
-      light: { color: '#AF6E0E', fontStyle: 'italic' },
-      dark:  { color: '#E5C07B', fontStyle: 'italic' },
+      light: { color: '#AF6E0E' },
+      dark:  { color: '#E5C07B' },
     });
     // Punctuation: commas, dots, parens, operators like = < > etc.
     this.punctuationDecorationType = vscode.window.createTextEditorDecorationType({
