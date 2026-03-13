@@ -81,6 +81,15 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Restore package name for Marketplace
+        if: github.event.pull_request.base.ref == 'prod'
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            pkg.name = 'vscode-extension-inline-sql';
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
       - name: Publish to VS Code Marketplace
         if: github.event.pull_request.base.ref == 'prod'
         run: npx @vscode/vsce publish --no-dependencies -p ${{ secrets.VSCE_PAT }}
