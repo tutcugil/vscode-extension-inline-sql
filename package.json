@@ -1,0 +1,222 @@
+{
+  "name": "vscode-extension-inline-sql",
+  "displayName": "Inline SQL",
+  "description": "SQL syntax highlighting, autocomplete, validation, and formatting for inline SQL strings",
+  "version": "0.1.0",
+  "publisher": "tutcugil",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:typescript",
+    "onLanguage:javascript",
+    "onLanguage:python",
+    "onLanguage:java",
+    "onLanguage:csharp"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "inlineSql.formatSql",
+        "title": "Inline SQL: Format SQL at Cursor"
+      },
+      {
+        "command": "inlineSql.formatAllSql",
+        "title": "Inline SQL: Format All SQL in File"
+      },
+      {
+        "command": "inlineSql.refreshSchema",
+        "title": "Inline SQL: Refresh Schema Cache"
+      }
+    ],
+    "grammars": [
+      {
+        "scopeName": "inline-sql.injection.typescript",
+        "path": "./syntaxes/sql-injection-typescript.json",
+        "injectTo": ["source.ts", "source.tsx"],
+        "embeddedLanguages": {
+          "meta.embedded.inline.sql": "sql"
+        }
+      },
+      {
+        "scopeName": "inline-sql.injection.javascript",
+        "path": "./syntaxes/sql-injection-javascript.json",
+        "injectTo": ["source.js", "source.jsx"],
+        "embeddedLanguages": {
+          "meta.embedded.inline.sql": "sql"
+        }
+      },
+      {
+        "scopeName": "inline-sql.injection.python",
+        "path": "./syntaxes/sql-injection-python.json",
+        "injectTo": ["source.python"],
+        "embeddedLanguages": {
+          "meta.embedded.inline.sql": "sql"
+        }
+      },
+      {
+        "scopeName": "inline-sql.injection.java",
+        "path": "./syntaxes/sql-injection-java.json",
+        "injectTo": ["source.java"],
+        "embeddedLanguages": {
+          "meta.embedded.inline.sql": "sql"
+        }
+      },
+      {
+        "scopeName": "inline-sql.injection.csharp",
+        "path": "./syntaxes/sql-injection-csharp.json",
+        "injectTo": ["source.cs"],
+        "embeddedLanguages": {
+          "meta.embedded.inline.sql": "sql"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Inline SQL",
+      "properties": {
+        "inlineSql.languages": {
+          "type": "array",
+          "default": ["typescript", "javascript", "python", "java", "csharp"],
+          "description": "Enabled host languages for SQL detection"
+        },
+        "inlineSql.detection.minKeywords": {
+          "type": "number",
+          "default": 2,
+          "description": "Minimum distinct SQL keywords to classify a string as SQL"
+        },
+        "inlineSql.validation.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable SQL validation/linting"
+        },
+        "inlineSql.validation.dialect": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "mysql", "postgresql", "transactsql", "sqlite"],
+          "enumDescriptions": [
+            "Auto-detect based on host language (C# → TransactSQL, others → MySQL)",
+            "MySQL",
+            "PostgreSQL",
+            "TransactSQL (SQL Server)",
+            "SQLite"
+          ],
+          "description": "SQL dialect for validation"
+        },
+        "inlineSql.formatting.indent": {
+          "type": "number",
+          "default": 4,
+          "description": "Number of spaces for SQL indentation"
+        },
+        "inlineSql.formatting.uppercase": {
+          "type": "boolean",
+          "default": true,
+          "description": "Uppercase SQL keywords when formatting"
+        },
+        "inlineSql.formatting.dialect": {
+          "type": "string",
+          "default": "sql",
+          "description": "SQL dialect for formatting"
+        },
+        "inlineSql.connections": {
+          "type": "array",
+          "default": [],
+          "description": "Database connections for schema-aware autocomplete",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "driver": { "type": "string", "enum": ["postgres", "mysql", "mssql"] },
+              "host": { "type": "string" },
+              "port": { "type": "number" },
+              "database": { "type": "string" },
+              "user": { "type": "string" },
+              "password": { "type": "string" }
+            },
+            "required": ["name", "driver", "host", "database"]
+          }
+        },
+        "inlineSql.activeConnection": {
+          "type": "string",
+          "default": "",
+          "description": "Name of the active database connection"
+        },
+        "inlineSql.schemaCacheTTL": {
+          "type": "number",
+          "default": 300,
+          "description": "Schema cache TTL in seconds"
+        }
+      }
+    },
+    "configurationDefaults": {
+      "editor.tokenColorCustomizations": {
+        "[Default Light+][Default Light Modern][Visual Studio Light][Quiet Light][Solarized Light]": {
+          "textMateRules": [
+            { "scope": "keyword.other.DML.sql", "settings": { "foreground": "#0000FF", "fontStyle": "bold" } },
+            { "scope": "keyword.other.sql", "settings": { "foreground": "#0000FF" } },
+            { "scope": "keyword.operator.sql", "settings": { "foreground": "#0000FF" } },
+            { "scope": "storage.type.sql", "settings": { "foreground": "#2E8B57", "fontStyle": "italic" } },
+            { "scope": "support.function.sql", "settings": { "foreground": "#FF00FF" } },
+            { "scope": "constant.numeric.sql", "settings": { "foreground": "#FF0000" } },
+            { "scope": "keyword.operator.star.sql", "settings": { "foreground": "#808080" } }
+          ]
+        },
+        "[Default Dark+][Default Dark Modern][Visual Studio Dark][One Dark Pro][Dracula][Monokai][Dark+ (default dark)][GitHub Dark]": {
+          "textMateRules": [
+            { "scope": "keyword.other.DML.sql", "settings": { "foreground": "#569CD6", "fontStyle": "bold" } },
+            { "scope": "keyword.other.sql", "settings": { "foreground": "#569CD6" } },
+            { "scope": "keyword.operator.sql", "settings": { "foreground": "#569CD6" } },
+            { "scope": "storage.type.sql", "settings": { "foreground": "#4EC9B0", "fontStyle": "italic" } },
+            { "scope": "support.function.sql", "settings": { "foreground": "#DCDCAA" } },
+            { "scope": "constant.numeric.sql", "settings": { "foreground": "#B5CEA8" } },
+            { "scope": "keyword.operator.star.sql", "settings": { "foreground": "#D4D4D4" } }
+          ]
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "test:unit": "mocha --require ts-node/register 'test/suite/**/*.test.ts'",
+    "pretest": "tsc -p tsconfig.test.json"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/test-electron": "^2.3.8",
+    "eslint": "^8.56.0",
+    "mocha": "^10.2.0",
+    "ts-loader": "^9.5.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "node-sql-parser": "^5.3.2",
+    "sql-formatter": "^15.4.5"
+  },
+  "overrides": {
+    "serialize-javascript": ">=7.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tutcugil/vscode-extension-inline-sql.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  }
+}

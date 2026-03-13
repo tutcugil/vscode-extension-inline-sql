@@ -1,0 +1,13 @@
+{
+  "scopeName": "inline-sql.injection.javascript",
+  "injectionSelector": "L:string.template.js, L:string.quoted.double.js, L:string.quoted.single.js",
+  "patterns": [
+    { "include": "inline-sql.injection.typescript#sql-keywords" },
+    { "include": "inline-sql.injection.typescript#sql-dml" },
+    { "include": "inline-sql.injection.typescript#sql-types" },
+    { "include": "inline-sql.injection.typescript#sql-functions" },
+    { "include": "inline-sql.injection.typescript#sql-operators" },
+    { "include": "inline-sql.injection.typescript#sql-star" },
+    { "include": "inline-sql.injection.typescript#sql-numeric" }
+  ]
+}

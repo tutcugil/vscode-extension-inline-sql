@@ -1,0 +1,86 @@
+name: Release Extension
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [test, prod]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com
+          scope: '@tutcugil'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:unit
+
+      - name: Read version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "base_version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Determine release version
+        id: release
+        run: |
+          BASE="${{ steps.version.outputs.base_version }}"
+          BRANCH="${{ github.event.pull_request.base.ref }}"
+
+          if [ "$BRANCH" = "test" ]; then
+            VERSION="${BASE}-test"
+          else
+            VERSION="${BASE}"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Set package version
+        run: npm version "${{ steps.release.outputs.version }}" --no-git-tag-version
+
+      - name: Build extension
+        run: npm run compile
+
+      - name: Package VSIX
+        run: |
+          npx @vscode/vsce package --no-dependencies -o "inline-sql-${{ steps.release.outputs.version }}.vsix"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: ${{ steps.release.outputs.version }}
+          body: ${{ github.event.pull_request.body }}
+          prerelease: ${{ github.event.pull_request.base.ref == 'test' }}
+          files: "*.vsix"
+
+      - name: Publish to GitHub Packages
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            pkg.name = '@tutcugil/vscode-extension-inline-sql';
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to VS Code Marketplace
+        if: github.event.pull_request.base.ref == 'prod'
+        run: npx @vscode/vsce publish --no-dependencies -p ${{ secrets.VSCE_PAT }}

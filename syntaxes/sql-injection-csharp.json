@@ -1,0 +1,43 @@
+{
+  "scopeName": "inline-sql.injection.csharp",
+  "injectionSelector": "L:string.quoted.double.cs",
+  "patterns": [
+    { "include": "#sql-dml" },
+    { "include": "#sql-keywords" },
+    { "include": "#sql-types" },
+    { "include": "#sql-functions" },
+    { "include": "#sql-operators" },
+    { "include": "#sql-star" },
+    { "include": "#sql-numeric" }
+  ],
+  "repository": {
+    "sql-dml": {
+      "match": "(?i)\\b(SELECT|INSERT\\s+INTO|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|MERGE|EXEC|EXECUTE|CALL|GRANT|REVOKE|WITH)\\b",
+      "name": "keyword.other.DML.sql"
+    },
+    "sql-keywords": {
+      "match": "(?i)\\b(FROM|WHERE|JOIN|INNER|LEFT|RIGHT|OUTER|CROSS|FULL|ON|AND|OR|NOT|IN|EXISTS|BETWEEN|LIKE|IS|NULL|AS|GROUP\\s+BY|ORDER\\s+BY|HAVING|LIMIT|OFFSET|UNION|ALL|INTERSECT|EXCEPT|DISTINCT|INTO|VALUES|SET|RETURNING|ASC|DESC|CASE|WHEN|THEN|ELSE|END|TOP|FETCH|NEXT|ROWS|ONLY|TABLE|INDEX|VIEW|PROCEDURE|FUNCTION|TRIGGER|PRIMARY\\s+KEY|FOREIGN\\s+KEY|REFERENCES|CONSTRAINT|DEFAULT|CHECK|UNIQUE|CASCADE|IF\\s+EXISTS|IF\\s+NOT\\s+EXISTS|BEGIN|COMMIT|ROLLBACK|DECLARE|GO|USE|DATABASE|SCHEMA|COLUMN|ADD|RENAME|OVER|PARTITION\\s+BY|WINDOW|RECURSIVE|LATERAL|NATURAL|USING|REPLACE|IGNORE|RETURNING|CONFLICT|NOTHING|EXCLUDED)\\b",
+      "name": "keyword.other.sql"
+    },
+    "sql-types": {
+      "match": "(?i)\\b(VARCHAR|CHAR|NVARCHAR|NCHAR|TEXT|NTEXT|INT|INTEGER|BIGINT|SMALLINT|TINYINT|FLOAT|DOUBLE|DECIMAL|NUMERIC|REAL|MONEY|SMALLMONEY|BOOLEAN|BOOL|BIT|DATE|TIME|TIMESTAMP|DATETIME|DATETIME2|SMALLDATETIME|DATETIMEOFFSET|BLOB|CLOB|BINARY|VARBINARY|IMAGE|XML|JSON|JSONB|UUID|UNIQUEIDENTIFIER|SERIAL|BIGSERIAL|SMALLSERIAL)\\b",
+      "name": "storage.type.sql"
+    },
+    "sql-functions": {
+      "match": "(?i)\\b(COUNT|SUM|AVG|MIN|MAX|COALESCE|NULLIF|CAST|CONVERT|ISNULL|IFNULL|NVL|CONCAT|SUBSTRING|TRIM|LTRIM|RTRIM|UPPER|LOWER|LENGTH|LEN|REPLACE|NOW|CURRENT_TIMESTAMP|GETDATE|DATEADD|DATEDIFF|YEAR|MONTH|DAY|ROW_NUMBER|RANK|DENSE_RANK|NTILE|LAG|LEAD|FIRST_VALUE|LAST_VALUE|ABS|CEILING|FLOOR|ROUND|SIGN|POWER|SQRT|FORMAT|STRING_AGG)\\b(?=\\s*\\()",
+      "name": "support.function.sql"
+    },
+    "sql-operators": {
+      "match": "(?i)\\b(LIKE|ILIKE|IS\\s+NULL|IS\\s+NOT\\s+NULL|NOT\\s+IN|NOT\\s+EXISTS|NOT\\s+BETWEEN|NOT\\s+LIKE|ANY|SOME|ALL)\\b",
+      "name": "keyword.operator.sql"
+    },
+    "sql-star": {
+      "match": "(?<=SELECT\\s|SELECT\\s\\s|,\\s)\\*",
+      "name": "keyword.operator.star.sql"
+    },
+    "sql-numeric": {
+      "match": "\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.sql"
+    }
+  }
+}
