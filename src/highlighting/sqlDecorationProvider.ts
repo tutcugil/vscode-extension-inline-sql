@@ -227,10 +227,34 @@ export class SqlDecorationProvider implements vscode.Disposable {
         const openEnd = doc.positionAt(region.startOffset + matchStart + 1);
         bracketRanges.push({ range: new vscode.Range(openStart, openEnd) });
 
-        // Color the content inside brackets as identifier
-        const innerStart = doc.positionAt(region.startOffset + matchStart + 1);
-        const innerEnd = doc.positionAt(region.startOffset + matchEnd - 1);
-        identifierRanges.push({ range: new vscode.Range(innerStart, innerEnd) });
+        // Color the content inside brackets as identifier, splitting around interpolations
+        const innerContentStart = matchStart + 1;
+        const innerContentEnd = matchEnd - 1;
+        const innerText = regionText.slice(innerContentStart, innerContentEnd);
+        // Find interpolations within bracket content and split identifier ranges
+        const innerInterpolations = [...innerText.matchAll(/\$?\{[^}]+\}/g)];
+        if (innerInterpolations.length === 0) {
+          // No interpolations — color entire content as identifier
+          const innerStart = doc.positionAt(region.startOffset + innerContentStart);
+          const innerEnd = doc.positionAt(region.startOffset + innerContentEnd);
+          identifierRanges.push({ range: new vscode.Range(innerStart, innerEnd) });
+        } else {
+          // Split around interpolations: color non-interpolation parts as identifier
+          let cursor = 0;
+          for (const im of innerInterpolations) {
+            if (im.index > cursor) {
+              const partStart = doc.positionAt(region.startOffset + innerContentStart + cursor);
+              const partEnd = doc.positionAt(region.startOffset + innerContentStart + im.index);
+              identifierRanges.push({ range: new vscode.Range(partStart, partEnd) });
+            }
+            cursor = im.index + im[0].length;
+          }
+          if (cursor < innerText.length) {
+            const partStart = doc.positionAt(region.startOffset + innerContentStart + cursor);
+            const partEnd = doc.positionAt(region.startOffset + innerContentEnd);
+            identifierRanges.push({ range: new vscode.Range(partStart, partEnd) });
+          }
+        }
 
         // Color the closing bracket ]
         const closeStart = doc.positionAt(region.startOffset + matchEnd - 1);
