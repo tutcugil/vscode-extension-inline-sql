@@ -136,6 +136,35 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     this.diagnosticCollection.set(document.uri, diagnostics);
   }
 
+  /**
+   * Normalize SQL text to make it more parser-friendly.
+   * Handles T-SQL specific syntax that node-sql-parser doesn't support well.
+   */
+  private normalizeSql(sql: string): string {
+    let s = sql;
+
+    // Normalize placeholders inside bracket identifiers:
+    // [QUEUE_MESSAGE_@__p___PROCESSING] → [QUEUE_MESSAGE_X_PROCESSING]
+    s = s.replace(/\[([^\]]*(?:@__p__|__P__)[^\]]*)\]/g, (_match, inner: string) => {
+      return '[' + inner.replace(/@__p__|__P__/g, 'X') + ']';
+    });
+
+    // Replace standalone @__p__ or __P__ in SELECT column position with a literal 1
+    // e.g. "SELECT {MessageColumns}" → "SELECT @__p__" → "SELECT 1"
+    s = s.replace(/(?<=SELECT\s+)@__p__|__P__/gi, '1');
+
+    // Normalize temp table names: #TMP_CLAIMED → TMP_CLAIMED
+    s = s.replace(/#(\w+)/g, '$1');
+
+    // Normalize table variables: FROM @ids → FROM ids
+    s = s.replace(/(?<=\bFROM\s+)@(\w+)/gi, '$1');
+
+    // Remove OUTPUT ... INTO ... clause (T-SQL specific, not supported by parser)
+    s = s.replace(/\bOUTPUT\s+[\s\S]*?\bINTO\s+\w+\s*\([^)]*\)\s*/gi, '');
+
+    return s;
+  }
+
   private validateRegion(
     document: vscode.TextDocument,
     region: SqlRegion,
@@ -154,11 +183,7 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
       return undefined;
     }
 
-    // Normalize placeholders inside bracket identifiers:
-    // [QUEUE_MESSAGE_@__p___PROCESSING] → [QUEUE_MESSAGE_X_PROCESSING]
-    const normalizedSql = sql.replace(/\[([^\]]*@__p__[^\]]*)\]/g, (_match, inner: string) => {
-      return '[' + inner.replace(/@__p__/g, 'X') + ']';
-    });
+    const normalizedSql = this.normalizeSql(sql);
 
     // Calculate how many leading chars were trimmed so we can adjust offsets
     const leadingTrimmed = region.sqlText.length - region.sqlText.trimStart().length;
