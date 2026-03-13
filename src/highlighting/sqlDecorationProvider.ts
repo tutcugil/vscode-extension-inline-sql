@@ -39,6 +39,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
   private numericDecorationType: vscode.TextEditorDecorationType;
   private starDecorationType: vscode.TextEditorDecorationType;
   private identifierDecorationType: vscode.TextEditorDecorationType;
+  private bracketDecorationType: vscode.TextEditorDecorationType;
   private punctuationDecorationType: vscode.TextEditorDecorationType;
 
   private disposables: vscode.Disposable[] = [];
@@ -78,6 +79,11 @@ export class SqlDecorationProvider implements vscode.Disposable {
     this.identifierDecorationType = vscode.window.createTextEditorDecorationType({
       light: { color: '#111111' },
       dark:  { color: '#9CDCFE' },
+    });
+    // Bracket identifiers: [column] brackets — slightly darker than identifier color
+    this.bracketDecorationType = vscode.window.createTextEditorDecorationType({
+      light: { color: '#444444' },
+      dark:  { color: '#7EB8DB' },
     });
     // Punctuation: commas, dots, parens, operators like = < > etc.
     this.punctuationDecorationType = vscode.window.createTextEditorDecorationType({
@@ -139,6 +145,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
     const numericRanges: vscode.DecorationOptions[] = [];
     const starRanges: vscode.DecorationOptions[] = [];
     const identifierRanges: vscode.DecorationOptions[] = [];
+    const bracketRanges: vscode.DecorationOptions[] = [];
     const punctuationRanges: vscode.DecorationOptions[] = [];
 
     const wordPattern = /\b[A-Za-z_][A-Za-z0-9_]*\b/g;
@@ -146,6 +153,8 @@ export class SqlDecorationProvider implements vscode.Disposable {
     const starPattern = /\*/g;
     // Punctuation: commas, dots, parens, semicolons, comparison operators, arithmetic
     const punctuationPattern = /[(),;.=<>!+\-/%&|^~@#]/g;
+    // Bracket identifiers: [column_name], [dbo], [table] etc.
+    const bracketIdentifierPattern = /\[([^\]]+)\]/g;
     // SQL comments: -- line comments and /* block comments */
     const commentPattern = /--[^\n]*|\/\*[\s\S]*?\*\//g;
 
@@ -165,14 +174,41 @@ export class SqlDecorationProvider implements vscode.Disposable {
         commentRanges.push({ range: new vscode.Range(startPos, endPos) });
       }
 
-      // Helper: check if an offset falls inside a comment
+      // Match bracket identifiers: [column_name] etc.
+      const bracketSpans: Array<{ start: number; end: number }> = [];
+      bracketIdentifierPattern.lastIndex = 0;
+      while ((match = bracketIdentifierPattern.exec(regionText)) !== null) {
+        if (commentSpans.some(c => match!.index >= c.start && match!.index < c.end)) { continue; }
+        const matchStart = match.index;
+        const matchEnd = match.index + match[0].length;
+        bracketSpans.push({ start: matchStart, end: matchEnd });
+
+        // Color the opening bracket [
+        const openStart = doc.positionAt(region.startOffset + matchStart);
+        const openEnd = doc.positionAt(region.startOffset + matchStart + 1);
+        bracketRanges.push({ range: new vscode.Range(openStart, openEnd) });
+
+        // Color the content inside brackets as identifier
+        const innerStart = doc.positionAt(region.startOffset + matchStart + 1);
+        const innerEnd = doc.positionAt(region.startOffset + matchEnd - 1);
+        identifierRanges.push({ range: new vscode.Range(innerStart, innerEnd) });
+
+        // Color the closing bracket ]
+        const closeStart = doc.positionAt(region.startOffset + matchEnd - 1);
+        const closeEnd = doc.positionAt(region.startOffset + matchEnd);
+        bracketRanges.push({ range: new vscode.Range(closeStart, closeEnd) });
+      }
+
+      // Helper: check if an offset falls inside a comment or bracket identifier
       const isInComment = (offset: number): boolean =>
         commentSpans.some(c => offset >= c.start && offset < c.end);
+      const isInBracket = (offset: number): boolean =>
+        bracketSpans.some(b => offset >= b.start && offset < b.end);
 
       // Match words
       wordPattern.lastIndex = 0;
       while ((match = wordPattern.exec(regionText)) !== null) {
-        if (isInComment(match.index)) { continue; }
+        if (isInComment(match.index) || isInBracket(match.index)) { continue; }
 
         const word = match[0].toUpperCase();
         const startPos = doc.positionAt(region.startOffset + match.index);
@@ -201,7 +237,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
       // Match numbers
       numericPattern.lastIndex = 0;
       while ((match = numericPattern.exec(regionText)) !== null) {
-        if (isInComment(match.index)) { continue; }
+        if (isInComment(match.index) || isInBracket(match.index)) { continue; }
         const startPos = doc.positionAt(region.startOffset + match.index);
         const endPos = doc.positionAt(region.startOffset + match.index + match[0].length);
         numericRanges.push({ range: new vscode.Range(startPos, endPos) });
@@ -210,7 +246,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
       // Match star
       starPattern.lastIndex = 0;
       while ((match = starPattern.exec(regionText)) !== null) {
-        if (isInComment(match.index)) { continue; }
+        if (isInComment(match.index) || isInBracket(match.index)) { continue; }
         const startPos = doc.positionAt(region.startOffset + match.index);
         const endPos = doc.positionAt(region.startOffset + match.index + 1);
         starRanges.push({ range: new vscode.Range(startPos, endPos) });
@@ -219,7 +255,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
       // Match punctuation
       punctuationPattern.lastIndex = 0;
       while ((match = punctuationPattern.exec(regionText)) !== null) {
-        if (isInComment(match.index)) { continue; }
+        if (isInComment(match.index) || isInBracket(match.index)) { continue; }
         const startPos = doc.positionAt(region.startOffset + match.index);
         const endPos = doc.positionAt(region.startOffset + match.index + 1);
         punctuationRanges.push({ range: new vscode.Range(startPos, endPos) });
@@ -234,6 +270,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
     editor.setDecorations(this.numericDecorationType, numericRanges);
     editor.setDecorations(this.starDecorationType, starRanges);
     editor.setDecorations(this.identifierDecorationType, identifierRanges);
+    editor.setDecorations(this.bracketDecorationType, bracketRanges);
     editor.setDecorations(this.punctuationDecorationType, punctuationRanges);
   }
 
@@ -246,6 +283,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
     editor.setDecorations(this.numericDecorationType, []);
     editor.setDecorations(this.starDecorationType, []);
     editor.setDecorations(this.identifierDecorationType, []);
+    editor.setDecorations(this.bracketDecorationType, []);
     editor.setDecorations(this.punctuationDecorationType, []);
   }
 
@@ -261,6 +299,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
     this.numericDecorationType.dispose();
     this.starDecorationType.dispose();
     this.identifierDecorationType.dispose();
+    this.bracketDecorationType.dispose();
     this.punctuationDecorationType.dispose();
     this.disposables.forEach(d => d.dispose());
   }

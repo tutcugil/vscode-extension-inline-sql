@@ -28,7 +28,7 @@ const LANGUAGE_DIALECT_MAP: Record<string, string> = {
  * SQL statements/commands that node-sql-parser often can't parse
  * but are valid SQL. Skip validation for these to avoid false positives.
  */
-const SKIP_VALIDATION_PATTERN = /^\s*(?:SET\s+|BEGIN\s+|COMMIT|ROLLBACK|IF\s+|PRINT\s+|RAISERROR|THROW\s+|USE\s+|GO\b|EXEC(?:UTE)?\s+|DECLARE\s+)/i;
+const SKIP_VALIDATION_PATTERN = /^\s*(?:SET\s+|BEGIN\s+|COMMIT|ROLLBACK|IF\s+|PRINT\s+|RAISERROR|THROW\s+|USE\s+|GO\b|EXEC(?:UTE)?\s+|DECLARE\s+|DROP\s+)/i;
 
 /**
  * SQL clause fragments that are valid parts of larger statements
@@ -165,6 +165,13 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
 
     // Remove OUTPUT ... INTO ... clause (T-SQL specific, not supported by parser)
     s = s.replace(/\bOUTPUT\s+[\s\S]*?\bINTO\s+\w+\s*\([^)]*\)\s*/gi, '');
+
+    // Replace remaining @param references with literals for parser compatibility
+    // e.g. @node → 1, @nodeChecksum → 1 (keeps SQL structurally valid)
+    s = s.replace(/@\w+/g, '1');
+
+    // Remove trailing semicolons that some dialects don't like
+    s = s.replace(/;\s*$/, '');
 
     return s;
   }
