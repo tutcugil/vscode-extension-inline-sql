@@ -153,6 +153,10 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     // e.g. "SELECT {MessageColumns}" → "SELECT @__p__" → "SELECT 1"
     s = s.replace(/(?<=SELECT\s+)@__p__|__P__/gi, '1');
 
+    // Normalize bracket identifiers: [column_name] → `column_name`
+    // T-SQL brackets are not always handled well by node-sql-parser
+    s = s.replace(/\[([^\]]+)\]/g, '`$1`');
+
     // Normalize temp table names: #TMP_CLAIMED → TMP_CLAIMED
     s = s.replace(/#(\w+)/g, '$1');
 

@@ -31,6 +31,7 @@ const FUNCTION_KEYWORDS = new Set([
 ]);
 
 export class SqlDecorationProvider implements vscode.Disposable {
+  private commentDecorationType: vscode.TextEditorDecorationType;
   private dmlDecorationType: vscode.TextEditorDecorationType;
   private clauseDecorationType: vscode.TextEditorDecorationType;
   private typeDecorationType: vscode.TextEditorDecorationType;
@@ -45,6 +46,10 @@ export class SqlDecorationProvider implements vscode.Disposable {
 
   constructor() {
     // Light: SSMS classic | Dark: soft pastel tones for dark backgrounds
+    this.commentDecorationType = vscode.window.createTextEditorDecorationType({
+      light: { color: '#008000', fontStyle: 'italic' },
+      dark:  { color: '#6A9955', fontStyle: 'italic' },
+    });
     this.dmlDecorationType = vscode.window.createTextEditorDecorationType({
       light: { color: '#0000FF', fontWeight: 'bold' },
       dark:  { color: '#569CD6', fontWeight: 'bold' },
@@ -126,6 +131,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
     const text = doc.getText();
     const regions = detectSqlRegions(text, languageId);
 
+    const commentRanges: vscode.DecorationOptions[] = [];
     const dmlRanges: vscode.DecorationOptions[] = [];
     const clauseRanges: vscode.DecorationOptions[] = [];
     const typeRanges: vscode.DecorationOptions[] = [];
@@ -140,14 +146,34 @@ export class SqlDecorationProvider implements vscode.Disposable {
     const starPattern = /\*/g;
     // Punctuation: commas, dots, parens, semicolons, comparison operators, arithmetic
     const punctuationPattern = /[(),;.=<>!+\-/%&|^~@#]/g;
+    // SQL comments: -- line comments and /* block comments */
+    const commentPattern = /--[^\n]*|\/\*[\s\S]*?\*\//g;
 
     for (const region of regions) {
       const regionText = text.slice(region.startOffset, region.endOffset);
 
-      // Match words
+      // Find comment ranges first so we can skip them for other tokens
+      const commentSpans: Array<{ start: number; end: number }> = [];
       let match: RegExpExecArray | null;
+      commentPattern.lastIndex = 0;
+      while ((match = commentPattern.exec(regionText)) !== null) {
+        const matchStart = match.index;
+        const matchEnd = match.index + match[0].length;
+        commentSpans.push({ start: matchStart, end: matchEnd });
+        const startPos = doc.positionAt(region.startOffset + matchStart);
+        const endPos = doc.positionAt(region.startOffset + matchEnd);
+        commentRanges.push({ range: new vscode.Range(startPos, endPos) });
+      }
+
+      // Helper: check if an offset falls inside a comment
+      const isInComment = (offset: number): boolean =>
+        commentSpans.some(c => offset >= c.start && offset < c.end);
+
+      // Match words
       wordPattern.lastIndex = 0;
       while ((match = wordPattern.exec(regionText)) !== null) {
+        if (isInComment(match.index)) { continue; }
+
         const word = match[0].toUpperCase();
         const startPos = doc.positionAt(region.startOffset + match.index);
         const endPos = doc.positionAt(region.startOffset + match.index + match[0].length);
@@ -175,6 +201,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
       // Match numbers
       numericPattern.lastIndex = 0;
       while ((match = numericPattern.exec(regionText)) !== null) {
+        if (isInComment(match.index)) { continue; }
         const startPos = doc.positionAt(region.startOffset + match.index);
         const endPos = doc.positionAt(region.startOffset + match.index + match[0].length);
         numericRanges.push({ range: new vscode.Range(startPos, endPos) });
@@ -183,6 +210,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
       // Match star
       starPattern.lastIndex = 0;
       while ((match = starPattern.exec(regionText)) !== null) {
+        if (isInComment(match.index)) { continue; }
         const startPos = doc.positionAt(region.startOffset + match.index);
         const endPos = doc.positionAt(region.startOffset + match.index + 1);
         starRanges.push({ range: new vscode.Range(startPos, endPos) });
@@ -191,12 +219,14 @@ export class SqlDecorationProvider implements vscode.Disposable {
       // Match punctuation
       punctuationPattern.lastIndex = 0;
       while ((match = punctuationPattern.exec(regionText)) !== null) {
+        if (isInComment(match.index)) { continue; }
         const startPos = doc.positionAt(region.startOffset + match.index);
         const endPos = doc.positionAt(region.startOffset + match.index + 1);
         punctuationRanges.push({ range: new vscode.Range(startPos, endPos) });
       }
     }
 
+    editor.setDecorations(this.commentDecorationType, commentRanges);
     editor.setDecorations(this.dmlDecorationType, dmlRanges);
     editor.setDecorations(this.clauseDecorationType, clauseRanges);
     editor.setDecorations(this.typeDecorationType, typeRanges);
@@ -208,6 +238,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
   }
 
   private clearDecorations(editor: vscode.TextEditor): void {
+    editor.setDecorations(this.commentDecorationType, []);
     editor.setDecorations(this.dmlDecorationType, []);
     editor.setDecorations(this.clauseDecorationType, []);
     editor.setDecorations(this.typeDecorationType, []);
@@ -222,6 +253,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
     }
+    this.commentDecorationType.dispose();
     this.dmlDecorationType.dispose();
     this.clauseDecorationType.dispose();
     this.typeDecorationType.dispose();
