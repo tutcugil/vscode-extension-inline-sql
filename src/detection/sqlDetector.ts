@@ -50,6 +50,11 @@ export function isSqlString(content: string, minKeywords: number = 2): boolean {
     return false;
   }
 
+  // Skip pipe-delimited strings (e.g. "col1|col2|col3") — not SQL
+  if ((trimmed.match(/\|/g) || []).length >= 2 && !trimmed.includes('||')) {
+    return false;
+  }
+
   // Fast path: starts with a SQL statement keyword
   if (matchesSqlStatementStart(trimmed)) {
     return true;

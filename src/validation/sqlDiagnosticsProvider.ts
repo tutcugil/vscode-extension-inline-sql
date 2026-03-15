@@ -178,6 +178,10 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     s = s.replace(/@__p__|__P__/g, '1');
     s = s.replace(/@\w+/g, '1');
 
+    // Replace single pipe (bitwise OR) with + for parser compatibility
+    // but keep || (string concatenation) intact
+    s = s.replace(/(?<!\|)\|(?!\|)/g, '+');
+
     // Remove trailing semicolons that some dialects don't like
     s = s.replace(/;\s*$/, '');
 
