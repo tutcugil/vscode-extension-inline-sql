@@ -138,9 +138,9 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
 
   /**
    * Normalize SQL text to make it more parser-friendly.
-   * Handles T-SQL specific syntax that node-sql-parser doesn't support well.
+   * Dialect-aware: TransactSQL keeps bracket identifiers, others convert to backticks.
    */
-  private normalizeSql(sql: string): string {
+  private normalizeSql(sql: string, dialect: string): string {
     let s = sql;
 
     // Normalize placeholders inside bracket identifiers:
@@ -153,9 +153,12 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     // e.g. "SELECT {MessageColumns}" → "SELECT @__p__" → "SELECT 1"
     s = s.replace(/(?<=SELECT\s+)@__p__|__P__/gi, '1');
 
-    // Normalize bracket identifiers: [column_name] → `column_name`
-    // T-SQL brackets are not always handled well by node-sql-parser
-    s = s.replace(/\[([^\]]+)\]/g, '`$1`');
+    // Normalize bracket identifiers for non-TransactSQL dialects only.
+    // TransactSQL (SQL Server) supports [bracket] identifiers natively in node-sql-parser;
+    // converting to backticks breaks TransactSQL parsing.
+    if (dialect !== 'TransactSQL') {
+      s = s.replace(/\[([^\]]+)\]/g, '`$1`');
+    }
 
     // Normalize temp table names: #TMP_CLAIMED → TMP_CLAIMED
     s = s.replace(/#(\w+)/g, '$1');
@@ -199,7 +202,7 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
       return undefined;
     }
 
-    const normalizedSql = this.normalizeSql(sql);
+    const normalizedSql = this.normalizeSql(sql, dialect);
 
     // Calculate how many leading chars were trimmed so we can adjust offsets
     const leadingTrimmed = region.sqlText.length - region.sqlText.trimStart().length;

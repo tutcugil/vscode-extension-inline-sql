@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { DbConnectionConfig, SchemaInfo, TableInfo, ColumnInfo } from '../types';
+
+declare const __non_webpack_require__: NodeRequire;
 import { SchemaCache } from './schemaCache';
 
 /** Whitelist of allowed database driver modules */
@@ -11,7 +13,9 @@ function lazyRequire(moduleName: string): any {
     throw new Error(`Driver module "${moduleName}" is not in the allowed list.`);
   }
   try {
-    return require(moduleName);
+    // Use __non_webpack_require__ to bypass webpack static analysis.
+    // Database drivers are optional peer dependencies loaded at runtime.
+    return __non_webpack_require__(moduleName);
   } catch {
     throw new Error(`Driver package "${moduleName}" is not installed. Run: npm install ${moduleName}`);
   }
