@@ -172,8 +172,9 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     // Normalize temp table names: #TMP_CLAIMED → TMP_CLAIMED
     s = s.replace(/#(\w+)/g, '$1');
 
-    // Normalize table variables: FROM @ids → FROM ids
-    s = s.replace(/(?<=\bFROM\s+)@(\w+)/gi, '$1');
+    // Normalize table variables in all table positions:
+    // FROM @ids → FROM ids, INTO @q → INTO q, JOIN @tmp → JOIN tmp, UPDATE @t → UPDATE t
+    s = s.replace(/(?<=\b(?:FROM|INTO|JOIN|UPDATE)\s+)@(\w+)/gi, '$1');
 
     // Remove OUTPUT ... INTO ... clause (T-SQL specific, not supported by parser)
     // Supports dotted names (db.schema.table), bracket-quoted ([dbo].[Table]), table variables (@var),
