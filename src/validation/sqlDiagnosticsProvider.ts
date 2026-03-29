@@ -166,6 +166,9 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
       s = s.replace(/\[([^\]]+)\]/g, '`$1`');
     }
 
+    // Replace NEXT VALUE FOR <sequence> with a literal (T-SQL sequence syntax, unsupported by parser)
+    s = s.replace(/\bNEXT\s+VALUE\s+FOR\s+[\w.\[\]]+/gi, '1');
+
     // Normalize temp table names: #TMP_CLAIMED → TMP_CLAIMED
     s = s.replace(/#(\w+)/g, '$1');
 
@@ -206,7 +209,7 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
    * Only includes keywords that unambiguously start a new statement.
    * SELECT is excluded because it commonly appears as part of INSERT...SELECT.
    */
-  private static readonly STMT_BOUNDARY = /(?<=\n)\s*(?=(?:INSERT|UPDATE|DELETE|DECLARE|SET|BEGIN|COMMIT|ROLLBACK|IF|END|EXEC(?:UTE)?|DROP|CREATE|ALTER|MERGE|TRUNCATE|PRINT|RAISERROR|THROW|USE|GO)\b)/i;
+  private static readonly STMT_BOUNDARY = /(?<=\n)\s*(?=(?:INSERT|UPDATE|DELETE|DECLARE|BEGIN|COMMIT|ROLLBACK|IF|END|EXEC(?:UTE)?|DROP|CREATE|ALTER|MERGE|TRUNCATE|PRINT|RAISERROR|THROW|USE|GO)\b)/i;
 
   /**
    * Split a multi-statement T-SQL block into individual statements.
