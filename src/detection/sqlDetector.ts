@@ -3,6 +3,7 @@ import { extractStrings, replaceInterpolations } from './stringExtractor';
 import {
   matchesSqlStatementStart,
   ALL_SQL_KEYWORDS,
+  SQL_STATEMENT_KEYWORDS,
   MIN_SQL_STRING_LENGTH,
 } from './patterns';
 
@@ -50,8 +51,13 @@ export function isSqlString(content: string, minKeywords: number = 2): boolean {
     return false;
   }
 
-  // Fast path: starts with a SQL statement keyword
-  if (matchesSqlStatementStart(trimmed)) {
+  // Skip pipe-delimited strings (e.g. "col1|col2|col3") — not SQL
+  if ((trimmed.match(/\|/g) || []).length >= 2 && !trimmed.includes('||')) {
+    return false;
+  }
+
+  // Fast path: starts with a SQL statement keyword (must meet minimum length)
+  if (trimmed.length >= MIN_SQL_STRING_LENGTH && matchesSqlStatementStart(trimmed)) {
     return true;
   }
 
@@ -66,17 +72,36 @@ export function isSqlString(content: string, minKeywords: number = 2): boolean {
 
 /**
  * Count the number of distinct SQL keywords in a string.
+ * Returns 0 if no statement keyword (SELECT, INSERT, etc.) is present,
+ * preventing false positives from common English words that happen to be
+ * clause keywords (IS, NOT, ON, OR, IN, WITH, CHECK, etc.).
  */
 function countDistinctKeywords(text: string): number {
   const seen = new Set<string>();
+  let hasStatementKeyword = false;
   // Create regex locally to avoid shared mutable state
   const pattern = new RegExp(`\\b(?:${ALL_SQL_KEYWORDS.join('|')})\\b`, 'gi');
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
-    seen.add(match[0].toUpperCase());
+    const kw = match[0].toUpperCase();
+    seen.add(kw);
+    if (SQL_STATEMENT_KEYWORDS_SET.has(kw)) {
+      hasStatementKeyword = true;
+    }
   }
-  return seen.size;
+  return hasStatementKeyword ? seen.size : 0;
 }
+
+/**
+ * Statement keywords that reliably indicate SQL in scoring context.
+ * WITH is excluded because it's a common English word; it's still detected
+ * via fast path when the string starts with "WITH ..." (CTE).
+ */
+const SQL_STATEMENT_KEYWORDS_SET = new Set(
+  SQL_STATEMENT_KEYWORDS
+    .filter((k: string) => k !== 'WITH')
+    .map((k: string) => k.toUpperCase())
+);
 
 /**
  * Find the SQL region at a specific document offset, if any.

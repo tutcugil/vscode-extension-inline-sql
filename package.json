@@ -2,7 +2,7 @@
   "name": "vscode-extension-inline-sql",
   "displayName": "Inline SQL Highlighter",
   "description": "SQL syntax highlighting, autocomplete, validation, and formatting for inline SQL strings",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "tutcugil",
   "icon": "images/icon.png",
   "engines": {
