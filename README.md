@@ -33,6 +33,7 @@ Triggers on `.` (for `table.column`) and `Space` (after keywords).
 - **Auto-dialect detection** — C# files use TransactSQL, others default to MySQL
 - Configurable dialect: `auto`, `mysql`, `postgresql`, `transactsql`, `sqlite`
 - Smart skip for SQL fragments and T-SQL specific syntax
+- **Multi-statement T-SQL blocks** — `SET XACT_ABORT`, `BEGIN TRANSACTION`, `DECLARE` blocks are split into individual statements; procedural commands are skipped while DML statements (INSERT, DELETE, UPDATE, SELECT) are validated
 - Interpolation placeholders are normalized for parser compatibility
 
 ### Formatting
@@ -115,8 +116,8 @@ Connection object:
 1. **String Extraction** — Language-specific parser extracts all string literals, handling comments, escape sequences, and nested interpolations
 2. **Interpolation Replacement** — Template expressions are replaced with SQL-safe placeholders for parser compatibility
 3. **Classification** — Two-tier approach:
-   - **Fast path**: String starts with a SQL keyword (`SELECT`, `INSERT`, `CREATE`, etc.)
-   - **Scoring**: String contains 2+ distinct SQL keywords and is at least 20 characters
+   - **Fast path**: String starts with a SQL keyword (`SELECT`, `INSERT`, `CREATE`, etc.) and is at least 20 characters
+   - **Scoring**: String contains 2+ distinct SQL keywords (including at least one statement keyword) and is at least 20 characters
 4. **Highlighting** — Two layers work together:
    - **TextMate Grammar Injection** for base SQL syntax scopes
    - **Decoration API** for categorized highlighting that works with semantic tokenization

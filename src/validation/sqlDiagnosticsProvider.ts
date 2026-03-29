@@ -25,10 +25,16 @@ const LANGUAGE_DIALECT_MAP: Record<string, string> = {
 };
 
 /**
- * SQL statements/commands that node-sql-parser often can't parse
- * but are valid SQL. Skip validation for these to avoid false positives.
+ * Individual SQL statements/commands that node-sql-parser can't parse
+ * but are valid SQL. These are skipped when splitting multi-statement blocks.
  */
-const SKIP_VALIDATION_PATTERN = /^\s*(?:SET\s+|BEGIN\s+|COMMIT|ROLLBACK|IF\s+|PRINT\s+|RAISERROR|THROW\s+|USE\s+|GO\b|EXEC(?:UTE)?\s+|DECLARE\s+|DROP\s+)/i;
+const SKIP_STATEMENT_PATTERN = /^\s*(?:SET\s+|BEGIN\s+|COMMIT|ROLLBACK|IF\s+|PRINT\s+|RAISERROR|THROW\s+|USE\s+|GO\b|EXEC(?:UTE)?\s+|DECLARE\s+|DROP\s+|END\b)/i;
+
+/**
+ * Detects whether a SQL string is a multi-statement T-SQL block
+ * (starts with SET, BEGIN, DECLARE, etc.) that needs to be split.
+ */
+const MULTI_STATEMENT_PATTERN = /^\s*(?:SET\s+|BEGIN\s+|DECLARE\s+)/i;
 
 /**
  * SQL clause fragments that are valid parts of larger statements
@@ -129,8 +135,8 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     const dialect = this.getDialect(document.languageId);
 
     for (const region of regions) {
-      const diag = this.validateRegion(document, region, dialect);
-      if (diag) { diagnostics.push(diag); }
+      const diags = this.validateRegion(document, region, dialect);
+      diagnostics.push(...diags);
     }
 
     this.diagnosticCollection.set(document.uri, diagnostics);
@@ -167,7 +173,14 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     s = s.replace(/(?<=\bFROM\s+)@(\w+)/gi, '$1');
 
     // Remove OUTPUT ... INTO ... clause (T-SQL specific, not supported by parser)
-    s = s.replace(/\bOUTPUT\s+[\s\S]*?\bINTO\s+\w+\s*\([^)]*\)\s*/gi, '');
+    // Supports dotted names (db.schema.table), bracket-quoted ([dbo].[Table]), table variables (@var),
+    // and optional column list — e.g. OUTPUT deleted.* INTO @tmp (col1, col2) or OUTPUT inserted.id INTO @ids
+    s = s.replace(/\bOUTPUT\s+[\s\S]*?\bINTO\s+@?[\w.\[\]]+\s*(?:\([^)]*\))?\s*/gi, '');
+
+    // Remove table hint after DELETE/UPDATE alias: "DELETE TOP (n) q WITH (READPAST)" → "DELETE TOP (n) q"
+    // node-sql-parser can't parse alias+hint before FROM with 3-part table names
+    s = s.replace(/\b(DELETE\s+(?:TOP\s*\([^)]*\)\s*)?\w+)\s+WITH\s*\([^)]*\)/gi, '$1');
+    s = s.replace(/\b(UPDATE\s+\w+)\s+WITH\s*\([^)]*\)/gi, '$1');
 
     // Replace placeholders in table positions with valid table name
     // e.g. INNER JOIN @__p__ → INNER JOIN _T_, FROM __P__ → FROM _T_
@@ -188,58 +201,152 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     return s;
   }
 
+  /**
+   * T-SQL statement-start keywords for boundary detection when semicolons are absent.
+   * Only includes keywords that unambiguously start a new statement.
+   * SELECT is excluded because it commonly appears as part of INSERT...SELECT.
+   */
+  private static readonly STMT_BOUNDARY = /(?<=\n)\s*(?=(?:INSERT|UPDATE|DELETE|DECLARE|SET|BEGIN|COMMIT|ROLLBACK|IF|END|EXEC(?:UTE)?|DROP|CREATE|ALTER|MERGE|TRUNCATE|PRINT|RAISERROR|THROW|USE|GO)\b)/i;
+
+  /**
+   * Split a multi-statement T-SQL block into individual statements.
+   * Uses semicolons as primary delimiter, then falls back to newline+keyword boundaries.
+   */
+  private splitStatements(sql: string): Array<{ sql: string; offset: number }> {
+    const results: Array<{ sql: string; offset: number }> = [];
+    let current = '';
+    let currentStart = 0;
+
+    for (let i = 0; i < sql.length; i++) {
+      const ch = sql[i];
+
+      // Skip string literals
+      if (ch === '\'') {
+        current += ch;
+        i++;
+        while (i < sql.length) {
+          current += sql[i];
+          if (sql[i] === '\'' && sql[i + 1] !== '\'') { break; }
+          if (sql[i] === '\'' && sql[i + 1] === '\'') { current += sql[++i]; }
+          i++;
+        }
+        continue;
+      }
+
+      if (ch === ';') {
+        const trimmed = current.trim();
+        if (trimmed) {
+          results.push({ sql: trimmed, offset: currentStart });
+        }
+        current = '';
+        currentStart = i + 1;
+        continue;
+      }
+
+      if (!current.trim() && /\s/.test(ch)) {
+        currentStart = i + 1;
+      }
+
+      current += ch;
+    }
+
+    const trimmed = current.trim();
+    if (trimmed) {
+      results.push({ sql: trimmed, offset: currentStart });
+    }
+
+    // Second pass: split any remaining multi-statement chunks at newline+keyword boundaries
+    const refined: Array<{ sql: string; offset: number }> = [];
+    for (const entry of results) {
+      const parts = entry.sql.split(SqlDiagnosticsProvider.STMT_BOUNDARY);
+      let offset = entry.offset;
+      for (const part of parts) {
+        const t = part.trim();
+        if (t) {
+          refined.push({ sql: t, offset: offset + entry.sql.indexOf(t, offset - entry.offset) });
+        }
+        offset += part.length;
+      }
+    }
+
+    return refined;
+  }
+
   private validateRegion(
     document: vscode.TextDocument,
     region: SqlRegion,
     dialect: string,
-  ): vscode.Diagnostic | undefined {
+  ): vscode.Diagnostic[] {
     const sql = region.sqlText.trim();
-    if (!sql) { return undefined; }
-
-    // Skip validation for known SQL commands that parsers often don't support
-    if (SKIP_VALIDATION_PATTERN.test(sql)) {
-      return undefined;
-    }
+    if (!sql) { return []; }
 
     // Skip SQL clause fragments (used in StringBuilder concatenation patterns)
     if (SQL_FRAGMENT_PATTERN.test(sql)) {
-      return undefined;
+      return [];
     }
 
-    const normalizedSql = this.normalizeSql(sql, dialect);
+    // Multi-statement T-SQL blocks: split into statements, validate DML ones individually
+    if (MULTI_STATEMENT_PATTERN.test(sql)) {
+      const statements = this.splitStatements(sql);
+      const diagnostics: vscode.Diagnostic[] = [];
 
-    // Calculate how many leading chars were trimmed so we can adjust offsets
+      for (const stmt of statements) {
+        // Skip procedural statements the parser can't handle
+        if (SKIP_STATEMENT_PATTERN.test(stmt.sql)) { continue; }
+        // Skip fragments
+        if (SQL_FRAGMENT_PATTERN.test(stmt.sql)) { continue; }
+
+        const stmtOffset = region.startOffset + (region.sqlText.length - region.sqlText.trimStart().length) + stmt.offset;
+
+        const diag = this.validateSingleStatement(document, stmt.sql, stmtOffset, region, dialect);
+        if (diag) { diagnostics.push(diag); }
+      }
+
+      return diagnostics;
+    }
+
+    // Single-statement: skip procedural commands
+    if (SKIP_STATEMENT_PATTERN.test(sql)) {
+      return [];
+    }
+
     const leadingTrimmed = region.sqlText.length - region.sqlText.trimStart().length;
+    const diag = this.validateSingleStatement(document, sql, region.startOffset + leadingTrimmed, region, dialect);
+    return diag ? [diag] : [];
+  }
+
+  private validateSingleStatement(
+    document: vscode.TextDocument,
+    sql: string,
+    sqlDocOffset: number,
+    region: SqlRegion,
+    dialect: string,
+  ): vscode.Diagnostic | undefined {
+    const normalizedSql = this.normalizeSql(sql, dialect);
 
     try {
       this.parser.astify(normalizedSql, { database: dialect });
-      return undefined; // Valid SQL
+      return undefined;
     } catch (err: unknown) {
       const error = err as { message?: string; location?: { start?: { offset?: number; line?: number; column?: number } } };
       const message = error.message || 'SQL syntax error';
 
-      // Try to map error position back to document
       let range: vscode.Range;
       if (error.location?.start) {
-        const rawOffset = region.startOffset + leadingTrimmed + (error.location.start.offset || 0);
-        // Clamp to region bounds to prevent out-of-range errors
+        const rawOffset = sqlDocOffset + (error.location.start.offset || 0);
         const errorOffset = Math.max(region.startOffset, Math.min(rawOffset, region.endOffset - 1));
         const startPos = document.positionAt(errorOffset);
-        // Highlight from error position to end of word or a few chars
         const endOffset = Math.min(errorOffset + 10, region.endOffset);
         const endPos = document.positionAt(endOffset);
         range = new vscode.Range(startPos, endPos);
       } else {
-        // Fallback: highlight the entire SQL region
-        range = new vscode.Range(
-          document.positionAt(region.startOffset),
-          document.positionAt(region.endOffset),
-        );
+        const startPos = document.positionAt(sqlDocOffset);
+        const endOffset = Math.min(sqlDocOffset + sql.length, region.endOffset);
+        const endPos = document.positionAt(endOffset);
+        range = new vscode.Range(startPos, endPos);
       }
 
-      // Clean up the error message (remove parser internals)
       const cleanMessage = this.cleanErrorMessage(message);
-
       const diagnostic = new vscode.Diagnostic(range, `SQL: ${cleanMessage}`, vscode.DiagnosticSeverity.Warning);
       diagnostic.source = 'Inline SQL';
       return diagnostic;
