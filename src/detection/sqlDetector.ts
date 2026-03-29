@@ -56,8 +56,8 @@ export function isSqlString(content: string, minKeywords: number = 2): boolean {
     return false;
   }
 
-  // Fast path: starts with a SQL statement keyword (must meet minimum length)
-  if (trimmed.length >= MIN_SQL_STRING_LENGTH && matchesSqlStatementStart(trimmed)) {
+  // Fast path: starts with a SQL statement keyword
+  if (matchesSqlStatementStart(trimmed)) {
     return true;
   }
 
