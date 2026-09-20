@@ -7,6 +7,8 @@ export interface SqlRegion {
   sqlText: string;
   /** The host language ID */
   languageId: string;
+  /** Original literal metadata; normalized sqlText must never be written to source. */
+  literal?: StringLiteral;
 }
 
 export interface StringLiteral {
@@ -18,6 +20,8 @@ export interface StringLiteral {
   content: string;
   /** Type of string literal */
   type: 'single' | 'double' | 'template' | 'triple' | 'verbatim' | 'raw' | 'textblock';
+  interpolationWidth?: number;
+  raw?: boolean;
 }
 
 export interface DbConnectionConfig {
@@ -28,6 +32,7 @@ export interface DbConnectionConfig {
   database: string;
   user?: string;
   password?: string;
+  passwordEnv?: string;
 }
 
 export interface SchemaInfo {

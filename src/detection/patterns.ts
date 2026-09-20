@@ -34,7 +34,7 @@ export const ALL_SQL_KEYWORDS = [
 export function matchesSqlStatementStart(text: string): boolean {
   let s = text;
   // Strip leading whitespace and -- comments iteratively
-  while (true) {
+  while (s.length > 0) {
     s = s.replace(/^\s+/, '');
     if (s.startsWith('--')) {
       const nl = s.indexOf('\n');

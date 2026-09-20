@@ -150,7 +150,7 @@ describe('detectSqlRegions', () => {
   });
 
   describe('Fixture files', () => {
-    const fixturesDir = path.join(__dirname, '..', 'fixtures');
+    const fixturesDir = path.resolve(__dirname, '../../../test/fixtures');
 
     it('should detect SQL regions in TypeScript fixture', () => {
       const code = fs.readFileSync(path.join(fixturesDir, 'sample.ts'), 'utf8');

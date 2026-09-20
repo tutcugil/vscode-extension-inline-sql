@@ -1,4 +1,4 @@
-import { SchemaInfo, TableInfo, ColumnInfo, DbConnectionConfig } from '../types';
+import { SchemaInfo } from '../types';
 
 export class SchemaCache {
   private cache: Map<string, SchemaInfo> = new Map();

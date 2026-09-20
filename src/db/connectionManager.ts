@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import { DbConnectionConfig, SchemaInfo, TableInfo, ColumnInfo } from '../types';
+import { DbConnectionConfig, SchemaInfo, TableInfo } from '../types';
 
-declare const __non_webpack_require__: NodeRequire;
+import { createRequire } from 'node:module';
+import * as path from 'node:path';
 import { SchemaCache } from './schemaCache';
 
 /** Whitelist of allowed database driver modules */
@@ -12,13 +13,16 @@ function lazyRequire(moduleName: string): any {
   if (!ALLOWED_DRIVER_MODULES.has(moduleName)) {
     throw new Error(`Driver module "${moduleName}" is not in the allowed list.`);
   }
-  try {
-    // Use __non_webpack_require__ to bypass webpack static analysis.
-    // Database drivers are optional peer dependencies loaded at runtime.
-    return __non_webpack_require__(moduleName);
-  } catch {
-    throw new Error(`Driver package "${moduleName}" is not installed. Run: npm install ${moduleName}`);
+  if (!vscode.workspace.isTrusted) { throw new Error('Database drivers require a trusted workspace.'); }
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    if (folder.uri.scheme !== 'file') { continue; }
+    const requireFromWorkspace = createRequire(path.join(folder.uri.fsPath, 'package.json'));
+    let resolved: string;
+    try { resolved = requireFromWorkspace.resolve(moduleName); }
+    catch { continue; }
+    return requireFromWorkspace(resolved);
   }
+  throw new Error(`Install ${moduleName.split('/')[0]} in a trusted workspace to use schema completion.`);
 }
 
 /** Connection timeout in milliseconds */
@@ -28,6 +32,9 @@ export class ConnectionManager implements vscode.Disposable {
   private schemaCache: SchemaCache;
   private disposables: vscode.Disposable[] = [];
   private passwordWarningShown = false;
+  private generation = 0;
+  private nextRetryTime = 0;
+  private disposed = false;
   private pendingSchemaFetch: Promise<SchemaInfo | undefined> | null = null;
 
   constructor() {
@@ -45,23 +52,31 @@ export class ConnectionManager implements vscode.Disposable {
           this.schemaCache.setTTL(newTTL);
         }
         if (e.affectsConfiguration('inlineSql.connections') || e.affectsConfiguration('inlineSql.activeConnection')) {
-          this.schemaCache.invalidate();
+          this.invalidate();
         }
       })
     );
   }
 
   getActiveConnectionConfig(): DbConnectionConfig | undefined {
+    if (this.disposed || !vscode.workspace.isTrusted) { return undefined; }
     const config = vscode.workspace.getConfiguration('inlineSql');
     const connections = config.get<DbConnectionConfig[]>('connections', []);
     const activeName = config.get<string>('activeConnection', '');
 
-    if (!activeName || connections.length === 0) {
+    if (!activeName || !Array.isArray(connections) || connections.length === 0) {
       return undefined;
     }
 
-    const conn = connections.find(c => c.name === activeName);
-    if (!conn) { return undefined; }
+    const conn = connections.find(c => c && c.name === activeName);
+    if (!conn || !['postgres', 'mysql', 'mssql'].includes(conn.driver) ||
+        typeof conn.host !== 'string' || !conn.host ||
+        typeof conn.database !== 'string' || !conn.database ||
+        (conn.user !== undefined && typeof conn.user !== 'string') ||
+        (conn.password !== undefined && typeof conn.password !== 'string') ||
+        (conn.passwordEnv !== undefined && (typeof conn.passwordEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(conn.passwordEnv)))) {
+      return undefined;
+    }
 
     // Validate host format (basic sanity check)
     if (conn.host && !/^[\w.\-:[\]]+$/.test(conn.host)) {
@@ -80,11 +95,14 @@ export class ConnectionManager implements vscode.Disposable {
       this.passwordWarningShown = true;
       vscode.window.showWarningMessage(
         'Inline SQL: Database password is stored in plaintext in settings.json. ' +
-        'Consider using environment variables instead.'
+        'Use the passwordEnv setting to read an environment variable instead.'
       );
     }
 
-    return conn;
+    if (conn.passwordEnv && process.env[conn.passwordEnv] === undefined) {
+      return undefined;
+    }
+    return { ...conn, password: conn.passwordEnv ? process.env[conn.passwordEnv] : conn.password };
   }
 
   async getSchema(): Promise<SchemaInfo | undefined> {
@@ -95,12 +113,14 @@ export class ConnectionManager implements vscode.Disposable {
     const cached = this.schemaCache.get(connConfig.name);
     if (cached) { return cached; }
 
+    if (Date.now() < this.nextRetryTime) { return undefined; }
+
     // Deduplicate concurrent fetches — use a stable reference
     if (this.pendingSchemaFetch) {
       return this.pendingSchemaFetch;
     }
 
-    const fetchPromise = this.doFetchSchema(connConfig);
+    const fetchPromise = this.doFetchSchema(connConfig, this.generation);
     this.pendingSchemaFetch = fetchPromise;
 
     // Clear pending reference only if it's still the same promise (prevents race)
@@ -113,17 +133,20 @@ export class ConnectionManager implements vscode.Disposable {
     return fetchPromise;
   }
 
-  private async doFetchSchema(connConfig: DbConnectionConfig): Promise<SchemaInfo | undefined> {
+  private async doFetchSchema(connConfig: DbConnectionConfig, generation: number): Promise<SchemaInfo | undefined> {
     try {
       const schema = await this.fetchSchema(connConfig);
+      if (this.disposed || generation !== this.generation) { return undefined; }
       if (schema) {
         this.schemaCache.set(connConfig.name, schema);
       }
       return schema;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error('Inline SQL: schema fetch error:', message);
-      vscode.window.showErrorMessage(`Inline SQL: Failed to fetch schema — ${message}`);
+      if (this.disposed || generation !== this.generation) { return undefined; }
+      // Driver errors may contain connection strings or passwords. Do not log them.
+      void err;
+      this.nextRetryTime = Date.now() + 30000;
+      vscode.window.showErrorMessage('Inline SQL: Failed to fetch schema. Check the connection settings, credentials and installed driver.');
       return undefined;
     }
   }
@@ -135,7 +158,7 @@ export class ConnectionManager implements vscode.Disposable {
   }
 
   async refreshSchema(): Promise<void> {
-    this.schemaCache.invalidate();
+    this.invalidate();
     const schema = await this.getSchema();
     if (schema) {
       vscode.window.showInformationMessage(
@@ -182,9 +205,6 @@ export class ConnectionManager implements vscode.Disposable {
       `);
 
       return buildSchemaFromRows(result.rows, 'table_schema', 'table_name', 'column_name', 'data_type', 'is_nullable');
-    } catch (err) {
-      await client.end().catch(() => { /* ignore cleanup error */ });
-      throw new Error(`PostgreSQL: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       await client.end().catch(() => { /* ignore cleanup error */ });
     }
@@ -203,15 +223,14 @@ export class ConnectionManager implements vscode.Disposable {
 
     try {
       const [rows] = await connection.execute(`
-        SELECT table_schema, table_name, column_name, data_type, is_nullable
+        SELECT table_schema AS TABLE_SCHEMA, table_name AS TABLE_NAME, column_name AS COLUMN_NAME,
+               data_type AS DATA_TYPE, is_nullable AS IS_NULLABLE
         FROM information_schema.columns
         WHERE table_schema = ?
         ORDER BY table_name, ordinal_position
       `, [config.database]);
 
       return buildSchemaFromRows(rows as Record<string, string>[], 'TABLE_SCHEMA', 'TABLE_NAME', 'COLUMN_NAME', 'DATA_TYPE', 'IS_NULLABLE');
-    } catch (err) {
-      throw new Error(`MySQL: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       await connection.end().catch(() => { /* ignore cleanup error */ });
     }
@@ -219,7 +238,7 @@ export class ConnectionManager implements vscode.Disposable {
 
   private async fetchMssqlSchema(config: DbConnectionConfig): Promise<SchemaInfo> {
     const mssql = lazyRequire('mssql');
-    const pool = await mssql.connect({
+    const pool = new mssql.ConnectionPool({
       server: config.host,
       port: config.port || 1433,
       database: config.database,
@@ -231,6 +250,7 @@ export class ConnectionManager implements vscode.Disposable {
     });
 
     try {
+      await pool.connect();
       const result = await pool.request().query(`
         SELECT s.name AS table_schema, t.name AS table_name, c.name AS column_name,
                ty.name AS data_type, c.is_nullable
@@ -242,24 +262,31 @@ export class ConnectionManager implements vscode.Disposable {
       `);
 
       return buildSchemaFromRows(result.recordset, 'table_schema', 'table_name', 'column_name', 'data_type', 'is_nullable');
-    } catch (err) {
-      throw new Error(`MSSQL: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       await pool.close().catch(() => { /* ignore cleanup error */ });
     }
   }
 
+  private invalidate(): void {
+    this.generation++;
+    this.nextRetryTime = 0;
+    this.pendingSchemaFetch = null;
+    this.schemaCache.invalidate();
+  }
+
   dispose(): void {
+    this.disposed = true;
+    this.invalidate();
     this.disposables.forEach(d => d.dispose());
   }
 }
 
 /** Clamp TTL to a valid range: 1–86400 seconds (1 second to 24 hours) */
 function clampTTL(value: number): number {
-  return Math.max(1, Math.min(Math.floor(value), 86400));
+  return Number.isFinite(value) ? Math.max(1, Math.min(Math.floor(value), 86400)) : 300;
 }
 
-function buildSchemaFromRows(
+export function buildSchemaFromRows(
   rows: Record<string, unknown>[],
   schemaCol: string, tableCol: string, columnCol: string, typeCol: string, nullableCol: string
 ): SchemaInfo {
@@ -272,7 +299,7 @@ function buildSchemaFromRows(
     }
 
     const tableName = String(row[tableCol]);
-    const key = tableName.toLowerCase();
+    const key = JSON.stringify([row[schemaCol] ?? null, tableName]);
 
     if (!tableMap.has(key)) {
       tableMap.set(key, {
