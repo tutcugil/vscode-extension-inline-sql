@@ -2,11 +2,12 @@
   "name": "vscode-extension-inline-sql",
   "displayName": "Inline SQL Highlighter",
   "description": "SQL syntax highlighting, autocomplete, validation, and formatting for inline SQL strings",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "publisher": "tutcugil",
   "icon": "images/icon.png",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.85.0",
+    "node": ">=22.13.0"
   },
   "categories": [
     "Programming Languages",
@@ -18,7 +19,9 @@
     "onLanguage:javascript",
     "onLanguage:python",
     "onLanguage:java",
-    "onLanguage:csharp"
+    "onLanguage:csharp",
+    "onLanguage:typescriptreact",
+    "onLanguage:javascriptreact"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -42,13 +45,26 @@
       "properties": {
         "inlineSql.languages": {
           "type": "array",
-          "default": ["typescript", "javascript", "python", "java", "csharp"],
-          "description": "Enabled host languages for SQL detection"
+          "default": [
+            "typescript",
+            "javascript",
+            "typescriptreact",
+            "javascriptreact",
+            "python",
+            "java",
+            "csharp"
+          ],
+          "description": "Enabled host languages for SQL detection",
+          "items": {
+            "type": "string"
+          }
         },
         "inlineSql.detection.minKeywords": {
-          "type": "number",
+          "type": "integer",
           "default": 2,
-          "description": "Minimum distinct SQL keywords to classify a string as SQL"
+          "description": "Minimum distinct SQL keywords to classify a string as SQL",
+          "minimum": 1,
+          "maximum": 100
         },
         "inlineSql.validation.enabled": {
           "type": "boolean",
@@ -58,9 +74,15 @@
         "inlineSql.validation.dialect": {
           "type": "string",
           "default": "auto",
-          "enum": ["auto", "mysql", "postgresql", "transactsql", "sqlite"],
+          "enum": [
+            "auto",
+            "mysql",
+            "postgresql",
+            "transactsql",
+            "sqlite"
+          ],
           "enumDescriptions": [
-            "Auto-detect based on host language (C# → TransactSQL, others → MySQL)",
+            "Auto-detect based on host language (C# \u2192 TransactSQL, others \u2192 MySQL)",
             "MySQL",
             "PostgreSQL",
             "TransactSQL (SQL Server)",
@@ -69,19 +91,24 @@
           "description": "SQL dialect for validation"
         },
         "inlineSql.formatting.indent": {
-          "type": "number",
+          "type": "integer",
           "default": 4,
-          "description": "Number of spaces for SQL indentation"
+          "description": "Number of spaces for SQL indentation",
+          "minimum": 0,
+          "maximum": 16,
+          "scope": "resource"
         },
         "inlineSql.formatting.uppercase": {
           "type": "boolean",
           "default": true,
-          "description": "Uppercase SQL keywords when formatting"
+          "description": "Uppercase SQL keywords when formatting",
+          "scope": "resource"
         },
         "inlineSql.formatting.dialect": {
           "type": "string",
           "default": "sql",
-          "description": "SQL dialect for formatting"
+          "description": "SQL dialect for formatting",
+          "scope": "resource"
         },
         "inlineSql.connections": {
           "type": "array",
@@ -90,16 +117,46 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": { "type": "string" },
-              "driver": { "type": "string", "enum": ["postgres", "mysql", "mssql"] },
-              "host": { "type": "string" },
-              "port": { "type": "number" },
-              "database": { "type": "string" },
-              "user": { "type": "string" },
-              "password": { "type": "string" }
+              "name": {
+                "type": "string"
+              },
+              "driver": {
+                "type": "string",
+                "enum": [
+                  "postgres",
+                  "mysql",
+                  "mssql"
+                ]
+              },
+              "host": {
+                "type": "string"
+              },
+              "port": {
+                "type": "number"
+              },
+              "database": {
+                "type": "string"
+              },
+              "user": {
+                "type": "string"
+              },
+              "password": {
+                "type": "string",
+                "markdownDeprecationMessage": "Use `passwordEnv` to keep passwords out of settings.json."
+              },
+              "passwordEnv": {
+                "type": "string",
+                "description": "Environment variable containing the database password."
+              }
             },
-            "required": ["name", "driver", "host", "database"]
-          }
+            "required": [
+              "name",
+              "driver",
+              "host",
+              "database"
+            ]
+          },
+          "scope": "machine"
         },
         "inlineSql.activeConnection": {
           "type": "string",
@@ -107,9 +164,11 @@
           "description": "Name of the active database connection"
         },
         "inlineSql.schemaCacheTTL": {
-          "type": "number",
+          "type": "integer",
           "default": 300,
-          "description": "Schema cache TTL in seconds"
+          "description": "Schema cache TTL in seconds",
+          "minimum": 1,
+          "maximum": 86400
         }
       }
     },
@@ -120,32 +179,31 @@
     "compile": "webpack",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
-    "test:unit": "TS_NODE_PROJECT=test/tsconfig.json mocha --require ts-node/register 'test/suite/**/*.test.ts'",
-    "pretest": "tsc -p tsconfig.test.json"
+    "lint": "eslint src test/suite --max-warnings 0",
+    "test": "npm run test:unit",
+    "test:unit": "tsc -p tsconfig.test.json && mocha \"out/test/suite/**/*.test.js\"",
+    "pretest": "npm run typecheck",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "vsix": "vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",
-    "@types/node": "^20.11.0",
-    "@types/vscode": "^1.85.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "@vscode/test-electron": "^2.3.8",
-    "eslint": "^8.56.0",
-    "mocha": "^10.2.0",
-    "ts-loader": "^9.5.1",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.3.3",
-    "webpack": "^5.89.0",
-    "webpack-cli": "^5.1.4"
+    "@types/node": "^20.19.43",
+    "@types/vscode": "1.85.0",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
+    "@typescript-eslint/parser": "^8.70.0",
+    "eslint": "^10.11.0",
+    "mocha": "^12.0.2",
+    "ts-loader": "^9.6.2",
+    "typescript": "~5.9.3",
+    "webpack": "^5.111.1",
+    "webpack-cli": "^7.2.3",
+    "@eslint/js": "^10.0.1",
+    "@vscode/vsce": "^4.0.0"
   },
   "dependencies": {
     "node-sql-parser": "^5.3.2",
-    "sql-formatter": "^15.4.5"
-  },
-  "overrides": {
-    "serialize-javascript": ">=7.0.3"
+    "sql-formatter": "^15.8.2"
   },
   "repository": {
     "type": "git",
@@ -153,5 +211,24 @@
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
-  }
+  },
+  "type": "commonjs",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Database connections and workspace driver loading require workspace trust.",
+      "restrictedConfigurations": [
+        "inlineSql.connections",
+        "inlineSql.activeConnection"
+      ]
+    }
+  },
+  "files": [
+    "dist/extension.js",
+    "images/icon.png",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "license": "MIT"
 }

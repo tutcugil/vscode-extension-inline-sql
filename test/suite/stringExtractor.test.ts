@@ -203,3 +203,36 @@ describe('Replace Interpolations', () => {
     assert.strictEqual(result, input);
   });
 });
+
+describe('Host string boundary regressions', () => {
+  it('extracts single-line C# raw strings with longer quote delimiters', () => {
+    const strings = extractStrings('var q = """"SELECT \'"""\' FROM users"""";', 'csharp');
+    assert.strictEqual(strings.length, 1);
+    assert.strictEqual(strings[0].content, 'SELECT \'"""\' FROM users');
+  });
+
+  it('handles quotes inside C# verbatim interpolation expressions', () => {
+    const strings = extractStrings('var q = $@"SELECT id FROM users WHERE id = {values["key"]}";', 'csharp');
+    assert.strictEqual(strings.length, 1);
+    assert.ok(strings[0].content.endsWith('{values["key"]}'));
+  });
+
+  it('handles quotes inside Python f-string expressions', () => {
+    const strings = extractStrings('q = f"SELECT id FROM users WHERE id = {values["key"]}"', 'python');
+    assert.strictEqual(strings.length, 1);
+    assert.ok(strings[0].content.endsWith('{values["key"]}'));
+  });
+
+  it('handles nested templates without losing the outer SQL boundary', () => {
+    const source = 'const q = `SELECT id FROM users WHERE id = ${fn(`a${fn(`b${id}`)}`)} AND active = 1`;';
+    const strings = extractStrings(source, 'typescript');
+    assert.strictEqual(strings.length, 1);
+    assert.ok(strings[0].content.endsWith('AND active = 1'));
+  });
+
+  it('does not mistake Python floor division for a host comment', () => {
+    const strings = extractStrings('q = f"SELECT id FROM users LIMIT {count // 2}"', 'python');
+    assert.strictEqual(strings.length, 1);
+    assert.ok(strings[0].content.endsWith('{count // 2}'));
+  });
+});

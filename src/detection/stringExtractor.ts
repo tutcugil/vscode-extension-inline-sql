@@ -1,4 +1,5 @@
 import { StringLiteral } from '../types';
+import { interpolationEnd } from './interpolations';
 
 /**
  * Extract all string literals from a document based on the host language.
@@ -89,39 +90,6 @@ function replaceNestedBraces(text: string, open: string, close: string, placehol
   return result;
 }
 
-/**
- * Skip a template literal starting at position `pos` (which points to the opening backtick).
- * Handles nested interpolations with nested template literals recursively.
- * Returns the index after the closing backtick.
- */
-function skipTemplateLiteral(text: string, pos: number): number {
-  let i = pos + 1; // skip opening backtick
-  while (i < text.length && text[i] !== '`') {
-    if (text[i] === '\\') {
-      i += 2;
-      continue;
-    }
-    if (text[i] === '$' && text[i + 1] === '{') {
-      let depth = 1;
-      i += 2;
-      while (i < text.length && depth > 0) {
-        if (text[i] === '{') { depth++; }
-        else if (text[i] === '}') { depth--; }
-        else if (i < text.length && text[i] === '`') {
-          i = skipTemplateLiteral(text, i);
-          continue;
-        }
-        if (i < text.length) { i++; }
-      }
-      continue;
-    }
-    i++;
-  }
-  // Points to closing backtick, or text.length if unterminated.
-  // Callers are responsible for incrementing past the backtick.
-  return Math.min(i, text.length);
-}
-
 // ─── JavaScript / TypeScript ───────────────────────────────────────────
 
 function extractJavaScriptStrings(text: string): StringLiteral[] {
@@ -159,18 +127,8 @@ function extractJavaScriptStrings(text: string): StringLiteral[] {
       while (i < text.length && text[i] !== '`') {
         if (text[i] === '\\') { i++; }
         else if (text[i] === '$' && text[i + 1] === '{') {
-          // Skip interpolation
-          let depth = 1;
-          i += 2;
-          while (i < text.length && depth > 0) {
-            if (text[i] === '{') { depth++; }
-            else if (text[i] === '}') { depth--; }
-            else if (text[i] === '`') {
-              // Nested template literal inside interpolation — skip recursively
-              i = skipTemplateLiteral(text, i);
-            }
-            i++;
-          }
+          const end = interpolationEnd(text, i + 2);
+          i = end < 0 ? text.length : end;
           continue;
         }
         i++;
@@ -181,6 +139,7 @@ function extractJavaScriptStrings(text: string): StringLiteral[] {
           contentEnd: i,
           content: text.slice(start, i),
           type: 'template',
+          interpolationWidth: 1,
         });
         i++; // skip closing backtick
       }
@@ -260,6 +219,8 @@ function extractPythonStrings(text: string): StringLiteral[] {
             contentEnd: endIdx,
             content: text.slice(start, endIdx),
             type: 'triple',
+            interpolationWidth: /f/i.test(prefix) ? 1 : 0,
+            raw: /r/i.test(prefix),
           });
           i = endIdx + 3;
         } else {
@@ -271,6 +232,12 @@ function extractPythonStrings(text: string): StringLiteral[] {
       const start = i + 1;
       i++;
       while (i < text.length && text[i] !== quote && text[i] !== '\n') {
+        if (/f/i.test(prefix) && text.startsWith('{{', i)) { i += 2; continue; }
+        if (/f/i.test(prefix) && text[i] === '{') {
+          const end = interpolationEnd(text, i + 1, 1, 'python');
+          i = end < 0 ? text.length : end;
+          continue;
+        }
         if (text[i] === '\\') { i++; }
         i++;
       }
@@ -280,6 +247,8 @@ function extractPythonStrings(text: string): StringLiteral[] {
           contentEnd: i,
           content: text.slice(start, i),
           type: quote === '"' ? 'double' : 'single',
+          interpolationWidth: /f/i.test(prefix) ? 1 : 0,
+          raw: /r/i.test(prefix),
         });
         i++;
       }
@@ -403,20 +372,21 @@ function extractCSharpStrings(text: string): StringLiteral[] {
       peekI++;
     }
     if (text[peekI] === '"' && text[peekI + 1] === '"' && text[peekI + 2] === '"') {
-      peekI += 3;
-      // Skip to end of line for the opening
-      while (peekI < text.length && text[peekI] !== '\n') { peekI++; }
-      if (peekI < text.length) { peekI++; }
-      const start = peekI;
-      const endIdx = text.indexOf('"""', peekI);
+      let quoteCount = 0;
+      while (text[peekI + quoteCount] === '"') { quoteCount++; }
+      const start = peekI + quoteCount;
+      const delimiter = '"'.repeat(quoteCount);
+      const endIdx = text.indexOf(delimiter, start);
       if (endIdx !== -1) {
         literals.push({
           contentStart: start,
           contentEnd: endIdx,
           content: text.slice(start, endIdx),
           type: 'raw',
+          raw: true,
+          interpolationWidth: dollarCount,
         });
-        i = endIdx + 3;
+        i = endIdx + quoteCount;
       } else {
         i = text.length;
       }
@@ -431,6 +401,12 @@ function extractCSharpStrings(text: string): StringLiteral[] {
       i += 3;
       const start = i;
       while (i < text.length) {
+        if (text.startsWith('{{', i)) { i += 2; continue; }
+        if (text[i] === '{') {
+          const end = interpolationEnd(text, i + 1);
+          i = end < 0 ? text.length : end;
+          continue;
+        }
         if (text[i] === '"' && text[i + 1] === '"') {
           i += 2; // escaped quote in verbatim
           continue;
@@ -444,6 +420,7 @@ function extractCSharpStrings(text: string): StringLiteral[] {
           contentEnd: i,
           content: text.slice(start, i),
           type: 'verbatim',
+          interpolationWidth: 1,
         });
         i++;
       }
@@ -479,16 +456,11 @@ function extractCSharpStrings(text: string): StringLiteral[] {
       i += 2;
       const start = i;
       while (i < text.length && text[i] !== '"' && text[i] !== '\n') {
+        if (text.startsWith('{{', i)) { i += 2; continue; }
         if (text[i] === '\\') { i++; }
         else if (text[i] === '{' && text[i + 1] !== '{') {
-          // Skip interpolation
-          let depth = 1;
-          i++;
-          while (i < text.length && depth > 0) {
-            if (text[i] === '{') { depth++; }
-            else if (text[i] === '}') { depth--; }
-            i++;
-          }
+          const end = interpolationEnd(text, i + 1);
+          i = end < 0 ? text.length : end;
           continue;
         }
         i++;
@@ -499,6 +471,7 @@ function extractCSharpStrings(text: string): StringLiteral[] {
           contentEnd: i,
           content: text.slice(start, i),
           type: 'double',
+          interpolationWidth: 1,
         });
         i++;
       }

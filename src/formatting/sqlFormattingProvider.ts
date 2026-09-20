@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
-import { detectSqlRegions, findSqlRegionAtOffset } from '../detection/sqlDetector';
+import { findSqlRegionAtOffset } from '../detection/sqlDetector';
+import { documentSqlRegions } from '../configuration';
 import { SqlRegion } from '../types';
 
-// sql-formatter is a bundled dependency
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { format } = require('sql-formatter');
+import { formatLiteral } from './formatLiteral';
+import { resolveFormatterOptions } from './formatterConfiguration';
+import { SqlFormatOptions } from './formatOptions';
 
 export class SqlFormattingProvider implements vscode.Disposable {
   private disposables: vscode.Disposable[] = [];
@@ -25,17 +26,19 @@ export class SqlFormattingProvider implements vscode.Disposable {
     }
 
     const document = editor.document;
-    const text = document.getText();
+    const version = document.version;
     const cursorOffset = document.offsetAt(editor.selection.active);
 
-    const regions = detectSqlRegions(text, document.languageId);
+    const regions = documentSqlRegions(document);
     const region = findSqlRegionAtOffset(regions, cursorOffset);
     if (!region) {
       vscode.window.showInformationMessage('Inline SQL: Cursor is not inside a SQL string.');
       return;
     }
 
-    const formatted = this.formatRegion(document, region);
+    const options = await this.loadOptions(document);
+    if (!options || !this.isCurrent(document, version)) { return; }
+    const formatted = this.formatRegion(document, region, options);
     if (!formatted) { return; }
 
     const regionRange = new vscode.Range(
@@ -56,21 +59,24 @@ export class SqlFormattingProvider implements vscode.Disposable {
     if (!editor) { return; }
 
     const document = editor.document;
-    const text = document.getText();
-    const regions = detectSqlRegions(text, document.languageId);
+    const version = document.version;
+    const regions = documentSqlRegions(document);
 
     if (regions.length === 0) {
       vscode.window.showInformationMessage('Inline SQL: No SQL regions found.');
       return;
     }
 
+    const options = await this.loadOptions(document);
+    if (!options || !this.isCurrent(document, version)) { return; }
+
     // Apply edits in reverse order to preserve offsets
     const sortedRegions = [...regions].sort((a, b) => b.startOffset - a.startOffset);
     let formattedCount = 0;
 
-    await editor.edit(editBuilder => {
+    const applied = await editor.edit(editBuilder => {
       for (const region of sortedRegions) {
-        const formatted = this.formatRegion(document, region);
+        const formatted = this.formatRegion(document, region, options);
         if (formatted) {
           const range = new vscode.Range(
             document.positionAt(region.startOffset),
@@ -82,39 +88,32 @@ export class SqlFormattingProvider implements vscode.Disposable {
       }
     });
 
-    vscode.window.showInformationMessage(`Inline SQL: Formatted ${formattedCount} SQL region(s).`);
+    if (applied) { vscode.window.showInformationMessage(`Inline SQL: Formatted ${formattedCount} SQL region(s).`); }
   }
 
-  private formatRegion(document: vscode.TextDocument, region: SqlRegion): string | undefined {
-    const config = vscode.workspace.getConfiguration('inlineSql');
-    const indent = config.get<number>('formatting.indent', 4);
-    const uppercase = config.get<boolean>('formatting.uppercase', true);
-    const dialect = config.get<string>('formatting.dialect', 'sql');
-
+  private async loadOptions(document: vscode.TextDocument): Promise<SqlFormatOptions | undefined> {
     try {
-      let formatted: string = format(region.sqlText, {
-        language: dialect,
-        tabWidth: indent,
-        keywordCase: uppercase ? 'upper' : 'preserve',
-      });
+      return await resolveFormatterOptions(document);
+    } catch (error) {
+      vscode.window.showWarningMessage(`Inline SQL: Invalid formatter configuration — ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
+    }
+  }
 
-      // Calculate the base indentation from the string's starting line
+  private isCurrent(document: vscode.TextDocument, version: number): boolean {
+    if (document.isClosed || document.version !== version) {
+      vscode.window.showInformationMessage('Inline SQL: Document changed while reading formatter configuration. Run formatting again.');
+      return false;
+    }
+    return true;
+  }
+
+  private formatRegion(document: vscode.TextDocument, region: SqlRegion, options: SqlFormatOptions): string | undefined {
+    try {
+      if (!region.literal) { return undefined; }
       const startPos = document.positionAt(region.startOffset);
-      const lineText = document.lineAt(startPos.line).text;
-      const baseIndent = lineText.match(/^\s*/)?.[0] || '';
-      // Add extra indent for the SQL content inside the string
-      const contentIndent = baseIndent + ' '.repeat(indent);
-
-      // Re-indent: first line stays inline, subsequent lines get base indent
-      const lines = formatted.split('\n');
-      if (lines.length > 1) {
-        formatted = lines[0] + '\n' + lines.slice(1).map(line => {
-          const trimmed = line.trimStart();
-          return trimmed ? contentIndent + trimmed : '';
-        }).join('\n');
-      }
-
-      return formatted;
+      const baseIndent = document.lineAt(startPos.line).text.match(/^[\t ]*/)?.[0] || '';
+      return formatLiteral(region.literal, document.languageId, options, baseIndent);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       console.error('Inline SQL: format error:', detail);
