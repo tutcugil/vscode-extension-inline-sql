@@ -109,7 +109,7 @@ Releases are automated via GitHub Actions (`.github/workflows/release.yml`):
 - **Trigger**: PR merged to `test` or `prod` branch
 - **test branch**: Creates a prerelease with a `-test` release tag and npm version; the VSIX keeps the numeric extension version and uses the prerelease flag
 - **prod branch**: Creates a stable release + publishes to VS Code Marketplace
-- Both branches publish to GitHub Packages
+- Both branches publish to GitHub Packages with an explicit npm dist-tag: `test` for prereleases and `latest` for stable releases. Test publications do not replace the stable `latest` tag.
 
 For a release, update the version in both the manifest and lockfile without creating a Git tag locally:
 

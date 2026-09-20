@@ -55,12 +55,17 @@ jobs:
 
           if [ "$BRANCH" = "test" ]; then
             VERSION="${BASE}-test"
+            NPM_TAG="test"
           else
             VERSION="${BASE}"
+            NPM_TAG="latest"
           fi
 
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$VERSION"
+            echo "tag=v${VERSION}"
+            echo "npm_tag=$NPM_TAG"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Package VSIX
         env:
@@ -90,9 +95,10 @@ jobs:
             pkg.name = '@tutcugil/vscode-extension-inline-sql';
             require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          npm publish
+          npm publish --tag "$NPM_TAG"
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          NPM_TAG: ${{ steps.release.outputs.npm_tag }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to VS Code Marketplace
