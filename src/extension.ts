@@ -21,7 +21,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // SQL autocomplete
   const completionProvider = new SqlCompletionProvider(
-    () => connectionManager.getSchemaSync()
+    () => connectionManager.getSchema()
   );
   const completionDisposable = vscode.languages.registerCompletionItemProvider(
     SUPPORTED_LANGUAGES.map(lang => ({ language: lang })),

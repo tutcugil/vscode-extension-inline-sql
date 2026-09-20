@@ -1,31 +1,29 @@
 import * as vscode from 'vscode';
-import { detectSqlRegions, findSqlRegionAtOffset } from '../detection/sqlDetector';
+import { findSqlRegionAtOffset } from '../detection/sqlDetector';
+import { documentSqlRegions } from '../configuration';
 import { buildCompletionItems } from './sqlKeywords';
 import { SchemaInfo, TableInfo } from '../types';
 
 export class SqlCompletionProvider implements vscode.CompletionItemProvider {
   private keywordItems: vscode.CompletionItem[];
-  private schemaProvider: (() => SchemaInfo | undefined) | undefined;
+  private schemaProvider: (() => SchemaInfo | undefined | Promise<SchemaInfo | undefined>) | undefined;
 
-  constructor(schemaProvider?: () => SchemaInfo | undefined) {
+  constructor(schemaProvider?: () => SchemaInfo | undefined | Promise<SchemaInfo | undefined>) {
     this.keywordItems = buildCompletionItems();
     this.schemaProvider = schemaProvider;
   }
 
-  provideCompletionItems(
+  async provideCompletionItems(
     document: vscode.TextDocument,
     position: vscode.Position,
     _token: vscode.CancellationToken,
     _context: vscode.CompletionContext
-  ): vscode.CompletionItem[] | undefined {
+  ): Promise<vscode.CompletionItem[] | undefined> {
     const text = document.getText();
     const offset = document.offsetAt(position);
-    const languageId = document.languageId;
 
     // Detect SQL regions and check if cursor is inside one
-    const config = vscode.workspace.getConfiguration('inlineSql');
-    const minKeywords = config.get<number>('detection.minKeywords', 2);
-    const regions = detectSqlRegions(text, languageId, minKeywords);
+    const regions = documentSqlRegions(document);
     const region = findSqlRegionAtOffset(regions, offset);
 
     if (!region) {
@@ -39,7 +37,8 @@ export class SqlCompletionProvider implements vscode.CompletionItemProvider {
     const context = getCompletionContext(sqlBeforeCursor);
 
     // Add schema-based completions if available
-    const schema = this.schemaProvider?.();
+    const schema = await this.schemaProvider?.();
+    if (_token.isCancellationRequested) { return undefined; }
     if (schema) {
       if (context === 'table') {
         items.push(...buildTableCompletionItems(schema));
@@ -63,11 +62,11 @@ export class SqlCompletionProvider implements vscode.CompletionItemProvider {
 
 type CompletionContext = 'table' | 'column' | 'general';
 
-function getCompletionContext(sqlBefore: string): CompletionContext {
+export function getCompletionContext(sqlBefore: string): CompletionContext {
   const trimmed = sqlBefore.replace(/\s+/g, ' ').trimEnd().toUpperCase();
 
   // After FROM, JOIN, INTO, UPDATE, TABLE → suggest tables
-  if (/(?:FROM|JOIN|INTO|UPDATE|TABLE)\s*$/i.test(trimmed)) {
+  if (/\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s*$/i.test(trimmed)) {
     return 'table';
   }
 
@@ -77,7 +76,7 @@ function getCompletionContext(sqlBefore: string): CompletionContext {
   }
 
   // After SELECT, WHERE, ON, SET, BY, HAVING → suggest columns
-  if (/(?:SELECT|WHERE|ON|SET|BY|HAVING|AND|OR)\s+$/i.test(trimmed)) {
+  if (/\b(?:SELECT|WHERE|ON|SET|BY|HAVING|AND|OR)\s*$/i.test(trimmed)) {
     return 'column';
   }
 

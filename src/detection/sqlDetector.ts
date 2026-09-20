@@ -1,5 +1,6 @@
 import { SqlRegion } from '../types';
-import { extractStrings, replaceInterpolations } from './stringExtractor';
+import { extractStrings } from './stringExtractor';
+import { transformInterpolations } from './interpolations';
 import {
   matchesSqlStatementStart,
   ALL_SQL_KEYWORDS,
@@ -24,13 +25,14 @@ export function detectSqlRegions(
   const regions: SqlRegion[] = [];
 
   for (const str of strings) {
-    const cleaned = replaceInterpolations(str.content, languageId);
+    const cleaned = transformInterpolations(str, languageId, () => languageId === 'csharp' ? '@__p__' : '__P__');
     if (isSqlString(cleaned, minKeywords)) {
       regions.push({
         startOffset: str.contentStart,
         endOffset: str.contentEnd,
         sqlText: cleaned,
         languageId,
+        literal: str,
       });
     }
   }
@@ -113,5 +115,5 @@ export function findSqlRegionAtOffset(
   regions: SqlRegion[],
   offset: number
 ): SqlRegion | undefined {
-  return regions.find(r => offset >= r.startOffset && offset < r.endOffset);
+  return regions.find(r => offset >= r.startOffset && offset <= r.endOffset);
 }

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { detectSqlRegions } from '../detection/sqlDetector';
+import { documentSqlRegions } from '../configuration';
 import { SQL_STATEMENT_KEYWORDS, SQL_CLAUSE_KEYWORDS } from '../detection/patterns';
 
 // Build keyword sets for categorized highlighting
@@ -32,7 +32,7 @@ const FUNCTION_KEYWORDS = new Set([
 
 /**
  * Iteratively find SQL comment spans (avoids ReDoS with block comments).
- * Handles -- line comments and /* block comments *​/.
+ * Handles SQL line comments and block comments.
  */
 function findCommentSpans(text: string): Array<{ start: number; end: number }> {
   const spans: Array<{ start: number; end: number }> = [];
@@ -149,6 +149,12 @@ export class SqlDecorationProvider implements vscode.Disposable {
       }),
     );
 
+    this.disposables.push(vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('inlineSql')) {
+        for (const editor of vscode.window.visibleTextEditors) { this.updateDecorations(editor); }
+      }
+    }));
+
     // Decorate current editor
     if (vscode.window.activeTextEditor) {
       this.updateDecorations(vscode.window.activeTextEditor);
@@ -180,7 +186,7 @@ export class SqlDecorationProvider implements vscode.Disposable {
     }
 
     const text = doc.getText();
-    const regions = detectSqlRegions(text, languageId);
+    const regions = documentSqlRegions(doc);
 
     const commentRanges: vscode.DecorationOptions[] = [];
     const dmlRanges: vscode.DecorationOptions[] = [];

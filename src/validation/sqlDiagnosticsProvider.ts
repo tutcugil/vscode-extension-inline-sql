@@ -1,10 +1,8 @@
 import * as vscode from 'vscode';
-import { detectSqlRegions } from '../detection/sqlDetector';
+import { documentSqlRegions } from '../configuration';
 import { SqlRegion } from '../types';
 
-// node-sql-parser is a bundled dependency
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { Parser } = require('node-sql-parser');
+import { Parser } from 'node-sql-parser';
 
 const DIALECT_MAP: Record<string, string> = {
   mysql: 'MySQL',
@@ -76,7 +74,7 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
         this.debounceTimers.delete(key);
       }),
       vscode.workspace.onDidChangeConfiguration(e => {
-        if (e.affectsConfiguration('inlineSql.validation')) {
+        if (e.affectsConfiguration('inlineSql')) {
           if (this.isEnabled()) {
             // Re-validate all open editors
             for (const editor of vscode.window.visibleTextEditors) {
@@ -129,8 +127,7 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
       return;
     }
 
-    const text = document.getText();
-    const regions = detectSqlRegions(text, document.languageId);
+    const regions = documentSqlRegions(document);
     const diagnostics: vscode.Diagnostic[] = [];
     const dialect = this.getDialect(document.languageId);
 
@@ -157,7 +154,7 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
 
     // Replace standalone @__p__ or __P__ in SELECT column position with a literal 1
     // e.g. "SELECT {MessageColumns}" → "SELECT @__p__" → "SELECT 1"
-    s = s.replace(/(?<=SELECT\s+)@__p__|__P__/gi, '1');
+    s = s.replace(/(?<=SELECT\s+)(?:@__p__|__P__)/gi, '1');
 
     // Normalize bracket identifiers for non-TransactSQL dialects only.
     // TransactSQL (SQL Server) supports [bracket] identifiers natively in node-sql-parser;
@@ -167,7 +164,7 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     }
 
     // Replace NEXT VALUE FOR <sequence> with a literal (T-SQL sequence syntax, unsupported by parser)
-    s = s.replace(/\bNEXT\s+VALUE\s+FOR\s+[\w.\[\]]+/gi, '1');
+    s = s.replace(/\bNEXT\s+VALUE\s+FOR\s+[\w.[\]]+/gi, '1');
 
     // Normalize temp table names: #TMP_CLAIMED → TMP_CLAIMED
     s = s.replace(/#(\w+)/g, '$1');
@@ -179,7 +176,7 @@ export class SqlDiagnosticsProvider implements vscode.Disposable {
     // Remove OUTPUT ... INTO ... clause (T-SQL specific, not supported by parser)
     // Supports dotted names (db.schema.table), bracket-quoted ([dbo].[Table]), table variables (@var),
     // and optional column list — e.g. OUTPUT deleted.* INTO @tmp (col1, col2) or OUTPUT inserted.id INTO @ids
-    s = s.replace(/\bOUTPUT\s+[\s\S]*?\bINTO\s+@?[\w.\[\]]+\s*(?:\([^)]*\))?\s*/gi, '');
+    s = s.replace(/\bOUTPUT\s+[\s\S]*?\bINTO\s+@?[\w.[\]]+\s*(?:\([^)]*\))?\s*/gi, '');
 
     // Remove table hint after DELETE/UPDATE alias: "DELETE TOP (n) q WITH (READPAST)" → "DELETE TOP (n) q"
     // node-sql-parser can't parse alias+hint before FROM with 3-part table names
