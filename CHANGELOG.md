@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+
+- Publish test npm packages with the explicit `test` dist-tag and stable packages with `latest`, fixing prerelease publication failures.
+
 ## 0.2.0
 
 ### Added
