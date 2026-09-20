@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+
+- Publish test npm packages with the explicit `test` dist-tag and stable packages with `latest`, fixing prerelease publication failures.
+
 ## 0.2.0
 
 ### Added
@@ -12,7 +18,6 @@
 
 ### Fixed
 
-- Publish test npm packages with the explicit `test` dist-tag and stable packages with `latest`, fixing prerelease publication failures.
 - Report invalid configuration without editing source code, and cancel formatting if the document changes during configuration loading.
 - Preserve interpolation expressions and valid host string syntax when formatting; leave unsupported escape sequences, multiline SQL values and single-line raw strings unchanged.
 - Handle nested template expressions, Python f-string expressions and C# raw string delimiters more accurately.
